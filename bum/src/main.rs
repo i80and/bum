@@ -57,6 +57,18 @@ impl<'a> json::ToJson for AlbumListEntry<'a> {
     }
 }
 
+impl<'a> json::ToJson for media::Song {
+    fn to_json(&self) -> json::Json {
+        let mut d = std::collections::BTreeMap::new();
+        d.insert("id".to_string(), self.id.to_json());
+        d.insert("title".to_string(), self.title.to_json());
+        d.insert("artist".to_string(), self.artist.to_json());
+
+        return json::Json::Object(d);
+    }
+}
+
+
 impl json::ToJson for media::Album {
     fn to_json(&self) -> json::Json {
         let mut d = std::collections::BTreeMap::new();
@@ -83,7 +95,8 @@ impl SongHandler {
     fn handle_metadata(&self, song: &media::Song, mut res: hyper::server::Response) {
         res.headers_mut().set(hyper::header::ContentType::json());
         *res.status_mut() = hyper::status::StatusCode::Ok;
-        res.send(b"{}").unwrap();
+
+        res.send(json::encode(&song.to_json()).unwrap().as_bytes()).unwrap();
     }
 
     fn handle_stream(&self, song: &media::Song, quality: transcode::Quality, mut res: hyper::server::Response) {
