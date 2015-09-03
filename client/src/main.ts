@@ -32,14 +32,14 @@ class Album {
 }
 
 class Song {
-    constructor(public id: SongID, public title: string) {}
+    constructor(public id: SongID, public title: string, public artist: string) {}
 
     stream() {
         return `/music/song/${this.id}/stream`
     }
 
-    static parse(data: {id: string, title: string}) {
-        return new Song(data.id, data.title)
+    static parse(data: {id: string, title: string, artist: string}) {
+        return new Song(data.id, data.title, data.artist)
     }
 }
 

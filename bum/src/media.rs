@@ -18,6 +18,7 @@ pub type SongID = String;
 pub struct Song {
     pub id: SongID,
     pub title: String,
+    pub artist: String,
     pub path: std::path::PathBuf
 }
 
@@ -25,7 +26,6 @@ pub struct Song {
 pub struct Album {
     pub id: AlbumID,
     pub title: String,
-    pub artist: String,
     pub year: String,
     pub tracks: Vec<SongID>
 }
@@ -148,9 +148,9 @@ impl MediaDatabase {
             _ => return Err(String::from("Need valid 'title'"))
         };
 
-        let artist = match doc.get("artist") {
+        let default_artist = match doc.get("artist") {
             Some(&toml::Value::String(ref t)) => t.clone(),
-            _ => return Err(String::from("Need valid 'artist'"))
+            _ => String::new()
         };
 
         let year = match doc.get("year") {
@@ -169,10 +169,15 @@ impl MediaDatabase {
                 let song_id = format!("{}-{}", id, i);
                 i += 1;
 
-                let song = match self.parse_song(prefix, &song_id, table) {
+                let mut song = match self.parse_song(prefix, &song_id, table) {
                     Ok(s) => s,
                     Err(_) => return None
                 };
+
+                match song.artist.as_ref() {
+                    "" => song.artist = default_artist.clone(),
+                    _ => ()
+                }
 
                 let result = Some(song.id.clone());
                 self.index_song_album.insert(song.id.clone(), id.clone());
@@ -186,7 +191,6 @@ impl MediaDatabase {
         let album = Album {
             id: id.clone(),
             title: title,
-            artist: artist,
             year: year,
             tracks: tracks
         };
@@ -204,6 +208,11 @@ impl MediaDatabase {
             _ => return Err(String::from("Need valid 'title'"))
         };
 
+        let artist = match doc.get("artist") {
+            Some(&toml::Value::String(ref t)) => t.clone(),
+            _ => String::new()
+        };
+
         let mut path = std::path::PathBuf::from(prefix);
         path.push(match doc.get("path") {
             Some(&toml::Value::String(ref t)) => t.clone(),
@@ -213,6 +222,7 @@ impl MediaDatabase {
         return Ok(Song {
             id: id.clone(),
             title: title,
+            artist: artist,
             path: path
         });
     }

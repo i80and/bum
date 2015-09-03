@@ -24,13 +24,13 @@ mod transcode;
 struct SongListEntry<'a> {
     id: &'a str,
     title: &'a str,
+    artist: &'a str,
     album_id: &'a str
 }
 
 struct AlbumListEntry<'a> {
     id: &'a str,
     title: &'a str,
-    artist: &'a str,
     year: &'a str
 }
 
@@ -39,6 +39,7 @@ impl<'a> json::ToJson for SongListEntry<'a> {
         let mut d = std::collections::BTreeMap::new();
         d.insert("id".to_string(), self.id.to_json());
         d.insert("title".to_string(), self.title.to_json());
+        d.insert("artist".to_string(), self.artist.to_json());
         d.insert("album".to_string(), self.album_id.to_json());
 
         return json::Json::Object(d);
@@ -50,7 +51,6 @@ impl<'a> json::ToJson for AlbumListEntry<'a> {
         let mut d = std::collections::BTreeMap::new();
         d.insert("id".to_string(), self.id.to_json());
         d.insert("title".to_string(), self.title.to_json());
-        d.insert("artist".to_string(), self.artist.to_json());
         d.insert("year".to_string(), self.year.to_json());
 
         return json::Json::Object(d);
@@ -62,7 +62,6 @@ impl json::ToJson for media::Album {
         let mut d = std::collections::BTreeMap::new();
         d.insert("id".to_string(), self.id.to_json());
         d.insert("title".to_string(), self.title.to_json());
-        d.insert("artist".to_string(), self.artist.to_json());
         d.insert("year".to_string(), self.year.to_json());
         d.insert("tracks".to_string(), self.tracks.to_json());
 
@@ -170,6 +169,7 @@ impl web::Handler for SongListHandler {
             let entry = SongListEntry {
                 id: &song.id,
                 title: &song.title,
+                artist: &song.artist,
                 album_id: &album.id
             };
 
@@ -232,7 +232,6 @@ impl web::Handler for AlbumListHandler {
             let entry = AlbumListEntry {
                 id: &album.id,
                 title: &album.title,
-                artist: &album.artist,
                 year: &album.year,
             };
 
