@@ -38,7 +38,7 @@ class Song {
         return `/music/song/${this.id}/stream`
     }
 
-    static parse(data: any) {
+    static parse(data: {id: string, title: string}) {
         return new Song(data.id, data.title)
     }
 }
@@ -74,7 +74,7 @@ class MediaLibrary {
 
         return self.fetch(`${this.root}/music/songs`).then((response) => {
             return response.json()
-        }).then((results) => {
+        }).then((results: any[]) => {
             for(let rawSong of results) {
                 songs.push(rawSong.id)
                 albums.add(rawSong.album)
