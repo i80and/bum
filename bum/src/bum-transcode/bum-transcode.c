@@ -39,7 +39,6 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, void* data) {
 
     switch (GST_MESSAGE_TYPE(msg)) {
         case GST_MESSAGE_EOS:
-            g_print("End of stream\n");
             g_main_loop_quit(loop);
             break;
 
