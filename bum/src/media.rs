@@ -171,7 +171,10 @@ impl MediaDatabase {
 
                 let mut song = match self.parse_song(prefix, &song_id, table) {
                     Ok(s) => s,
-                    Err(_) => return None
+                    Err(msg) => {
+                        println!("{}", msg);
+                        return None;
+                    }
                 };
 
                 match song.artist.as_ref() {
@@ -218,6 +221,12 @@ impl MediaDatabase {
             Some(&toml::Value::String(ref t)) => t.clone(),
             _ => return Err(String::from("Need valid 'path'"))
         });
+
+        // Check to make sure the given path exists
+        match std::fs::metadata(&path) {
+            Ok(ref m) if m.is_file() => (),
+            _ => { return Err(String::from(format!("Path '{}' not found", &path.to_string_lossy()))); }
+        }
 
         return Ok(Song {
             id: id.clone(),
