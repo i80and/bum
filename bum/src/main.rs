@@ -113,14 +113,20 @@ impl SongHandler {
         loop {
             let bytes = transcoder_stream.read(&mut buf).unwrap();
             if bytes == 0 { break; }
-            res.write_all(&buf[0..bytes]).unwrap();
+            match res.write_all(&buf[0..bytes]) {
+                Ok(_) => (),
+                Err(_) => return
+            }
         }
 
         res.end().unwrap();
 
         // Move the stream back so we can collect the child
         transcoder.stdout = Some(transcoder_stream);
-        transcoder.wait().unwrap();
+        match transcoder.wait() {
+            Ok(v) if !v.success() => println!("Transcoding failed: {}", song.id),
+            _ => ()
+        }
     }
 
     fn handle_cover(&self, song: &media::Song, mut res: hyper::server::Response) {
