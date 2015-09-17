@@ -25,14 +25,38 @@ static inline void __fail(const char* file, int line, const char* func) {
 const float MUSIC_QUALITIES[] = { 0.2f, 0.4f, 0.6f };
 
 const char* MUSIC_PIPELINE = \
-    "fdsrc name=src ! decodebin ! audioconvert ! vorbisenc name=enc ! "
-    "webmmux writing-app=bum ! fdsink name=sink";
+    "fdsrc name=src ! decodebin ! audioconvert name=converter ! "
+    "vorbisenc name=enc ! webmmux writing-app=bum ! fdsink name=sink";
 
 const char* VIDEO_PIPELINE = \
     "fdsrc name=src ! decodebin name=decode "
-    "webmmux writing-app=bum name=mux ! fdsink name=sink "
+    "webmmux writing-app=bum ! fdsink name=sink "
     "decode. ! videoconvert ! vp8enc name=video-enc ! queue ! mux. "
     "decode. ! audioconvert ! vorbisenc name=audio-enc ! queue ! mux. ";
+
+// GStreamer event filter that removes any image metadata.
+static gboolean remove_image(GstPad* pad,
+                            GstObject* parent,
+                            GstEvent* event) {
+    GstTagList* tags = NULL;
+    GstPad* sink = NULL;
+    gboolean ret = false;
+
+    switch (GST_EVENT_TYPE(event)) {
+        case GST_EVENT_TAG:
+            gst_event_parse_tag(event, &tags);
+            gst_tag_list_remove_tag(tags, "image");
+            event = gst_event_new_tag(tags);
+            break;
+        case GST_EVENT_CAPS:
+            sink = gst_element_get_static_pad(parent, "src");
+            ret = gst_pad_push_event(sink, event);
+            gst_object_unref(sink);
+            return ret;
+    }
+
+    return gst_pad_event_default(pad, parent, event);
+}
 
 static gboolean bus_call(GstBus *bus, GstMessage *msg, void* data) {
     GMainLoop* loop = (GMainLoop *) data;
@@ -79,11 +103,18 @@ int transcode_music(int infd, int quality) {
     }
 
     GstElement* src = gst_bin_get_by_name(GST_BIN(pipeline), "src");
+    GstElement* converter = gst_bin_get_by_name(GST_BIN(pipeline), "converter");
+    GstPad* converter_sink = gst_element_get_static_pad(converter, "sink");
     GstElement* enc = gst_bin_get_by_name(GST_BIN(pipeline), "enc");
     GstElement* sink = gst_bin_get_by_name(GST_BIN(pipeline), "sink");
 
-    if(src == NULL || enc == NULL || sink == NULL) {
+    if(src == NULL || converter == NULL || enc == NULL || sink == NULL) {
         fprintf(stderr, "Failed to select gstreamer elements\n");
+        return 1;
+    }
+
+    if(converter_sink == NULL) {
+        fprintf(stderr, "Failed to select converter sink\n");
         return 1;
     }
 
@@ -95,6 +126,11 @@ int transcode_music(int infd, int quality) {
     GstBus* bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
     gst_bus_add_watch(bus, bus_call, loop);
     gst_object_unref(bus);
+
+    // We have to remove any image tags. They're unnecessary, and can cause
+    // libvorbis to crash.
+    gst_pad_set_event_function(converter_sink, remove_image);
+    gst_object_unref(converter_sink);
 
     gst_element_set_state(pipeline, GST_STATE_PLAYING);
     g_main_loop_run(loop);
