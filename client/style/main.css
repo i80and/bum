@@ -1,0 +1,72 @@
+html {
+    background-color: black;
+    height: 100%;
+}
+
+body {
+    height: 100%;
+    margin: 0px;
+}
+
+#root-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+button {
+    border: 0.1pt transparent solid;
+    color: white;
+    background-color: black;
+
+    transition: background-color 0.25s, border-color 0.25s;
+}
+
+button.playing {
+    border-color: #ccc;
+}
+
+button:hover {
+    color: #ddf;
+    background-color: #002;
+}
+
+button:active {
+    color: #aaf;
+    background-color: #002;
+}
+
+button#play-button {
+    height: 100px;
+    width: 100px;
+    border-radius: 100px;
+}
+
+button#skip-button {
+    border: none;
+    height: 50px;
+    width: 50px;
+}
+
+button#skip-button:hover {
+    background-color: inherit;
+}
+
+button#skip-button:active {
+    background-color: inherit;
+    color: #99f;
+}
+
+#caption {
+    color: white;
+    font-style: italic;
+    padding-top: 10px;
+    text-align: center;
+}
+
+.button-group {
+    margin-top: 33.33%;
+    min-height: 125px;
+    margin-left: auto;
+    margin-right: auto;
+}

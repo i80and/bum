@@ -116,15 +116,18 @@ class MediaLibrary {
 
 class Player {
     playing: Song
+    paused: Song
 
     element: HTMLAudioElement
     library: MediaLibrary
     playlist: Song[]
 
-    onplay: (song: Song)=>void
+    onplay: ()=>void
 
     constructor(element: HTMLAudioElement, library: MediaLibrary) {
         this.playing = null
+        this.paused = null
+
         this.element = element
         this.library = library
         this.playlist = []
@@ -139,12 +142,27 @@ class Player {
             this.doPlay()
         }
 
-        this.onplay = (song) => {}
+        this.onplay = () => {}
     }
 
     play(songs: Song[]) {
-        this.playlist = songs
+        this.playlist = songs.slice()
         this.doPlay()
+    }
+
+    togglePause() {
+        if(this.paused) {
+            this.element.play()
+            this.playing = this.paused
+            this.paused = null
+            this.onplay()
+            return
+        }
+
+        this.element.pause()
+        this.paused = this.playing
+        this.playing = null
+        this.onplay()
     }
 
     skip() {
@@ -152,9 +170,10 @@ class Player {
     }
 
     doPlay() {
+        this.paused = null
         this.playing = null
         if(this.playlist.length === 0) {
-            this.onplay(null)
+            this.onplay()
             return
         }
 
@@ -163,42 +182,53 @@ class Player {
         this.element.src = this.library.songUrl(song)
         this.element.play()
 
-        this.onplay(song)
+        this.onplay()
     }
 }
 
 function main() {
-    const labelElement = document.createElement('div')
-    const audioElement = document.createElement('audio')
-    const playButton = document.createElement('button')
-    playButton.innerHTML = 'Play'
-    const skipButton = document.createElement('button')
-    skipButton.innerHTML = 'Skip'
+    const audioElement = <HTMLAudioElement>document.getElementById('player')
+
+    const playButton = document.getElementById('play-button')
+    const skipButton = document.getElementById('skip-button')
+    const labelElement = document.getElementById('caption')
 
     const library = new MediaLibrary('/api')
     const player = new Player(audioElement, library)
-    player.onplay = (song) => {
-        const title = song? song.title : ''
-        labelElement.textContent = title
+    player.onplay = () => {
+        const song = player.playing || player.paused
+
+        if(song) {
+            labelElement.textContent = `${song.artist} - ${song.title}`
+        } else {
+            labelElement.textContent = ''
+        }
+
+        if(player.playing) {
+            playButton.className = 'fa fa-pause playing'
+        } else {
+            playButton.className = 'fa fa-play'
+        }
+
     }
 
     library.shuffle().then((ids) => ids.map((id) => {
         return library.getSong(id)
     })).then((songs) => {
         playButton.addEventListener('click', function() {
-            player.play(songs)
+            if(player.playing) {
+                player.togglePause()
+            } else if(player.paused) {
+                player.togglePause()
+            } else {
+                player.play(songs)
+            }
         })
 
         skipButton.addEventListener('click', function() {
             player.skip()
         })
     })
-
-    const container = document.getElementById('root-container')
-    container.appendChild(audioElement)
-    container.appendChild(labelElement)
-    container.appendChild(playButton)
-    container.appendChild(skipButton)
 }
 
 window.addEventListener('DOMContentLoaded', function() {

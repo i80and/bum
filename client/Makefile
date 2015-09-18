@@ -1,6 +1,7 @@
 .PHONY: all clean
 
 all: ./build/app.js ./build/index.html
+	rsync -ra --delete style/ build/style
 
 ./.obj/%.js: ./src/%.ts
 	./node_modules/.bin/tsc --noImplicitAny --target es6 --outDir ./.obj $^

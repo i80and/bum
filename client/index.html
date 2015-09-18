@@ -6,14 +6,21 @@
 
     <title>Bum</title>
 
-    <!-- <link rel="stylesheet" href="style/main.css"> -->
-    <!-- <link rel="stylesheet" href="style/fonts/font-awesome.min.css"> -->
+    <link rel="stylesheet" href="style/main.css">
+    <link rel="stylesheet" href="style/fonts/font-awesome.min.css">
 
     <script defer src="app.js"></script>
 </head>
 
 <body>
-    <div id="root-container"></div>
+    <div id="root-container">
+        <audio id="player"></audio>
+        <div class="button-group">
+            <button id="play-button" class="fa fa-play"></button>
+            <button id="skip-button" class="fa fa-step-forward"></button>
+        </div>
+        <div id="caption"></div>
+    </div>
 </body>
 
 </html>
