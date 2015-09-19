@@ -29,6 +29,35 @@ class Album {
     title: string
     year: string
     tracks: SongID[]
+    private coverPath: string
+    private cover: Blob
+
+    constructor(id: AlbumID, title: string, year: string, tracks: SongID[], cover: string) {
+        this.id = id
+        this.title = title
+        this.year = year
+        this.tracks = tracks
+
+        this.coverPath = cover
+        this.cover = null
+    }
+
+    getCover(library: MediaLibrary) {
+        if(this.cover) {
+            return new Promise((resolve, reject) => { resolve(this.cover); })
+        }
+
+        return self.fetch(`${library.root}/music/album/${this.id}/cover`).then((response) => {
+            return response.blob()
+        }).then((data: Blob) => {
+            this.cover = data
+            return data
+        })
+    }
+
+    static parse(data: {id: string, title: string, year: string, tracks: SongID[], cover: string}) {
+        return new Album(data.id, data.title, data.year, data.tracks, data.cover)
+    }
 }
 
 class Song {
@@ -44,7 +73,7 @@ class Song {
 }
 
 class MediaLibrary {
-    private root: string
+    root: string
     private songs: SongID[]
     private albums: AlbumID[]
 
@@ -61,10 +90,10 @@ class MediaLibrary {
         this.albums = []
 
         this.songCache = new Map<SongID, Song>()
-        // this.albumCache = new Map<AlbumID, Album>()
+        this.albumCache = new Map<AlbumID, Album>()
 
         // this.artistIndex = new Map<string, SongID[]>()
-        // this.albumIndex = new Map<SongID, AlbumID>()
+        this.albumIndex = new Map<SongID, AlbumID>()
     }
 
     refresh() {
@@ -78,6 +107,8 @@ class MediaLibrary {
             for(let rawSong of results) {
                 songs.push(rawSong.id)
                 albums.add(rawSong.album)
+                this.albumIndex.set(rawSong.id, rawSong.album)
+
                 try {
                     songCache.set(rawSong.id, Song.parse(rawSong))
                 } catch(err) {
@@ -111,6 +142,24 @@ class MediaLibrary {
         } else {
             return null
         }
+    }
+
+    getAlbum(id: AlbumID) {
+        if(this.albumCache.has(id)) {
+            return new Promise((resolve, reject) => { resolve(this.albumCache.get(id)) })
+        }
+
+        return self.fetch(`${this.root}/music/album/${id}/metadata`).then((response) => {
+            return response.json()
+        }).then((data) => {
+            const album = Album.parse(data)
+            this.albumCache.set(id, album)
+            return album
+        })
+    }
+
+    getAlbumBySong(id: SongID) {
+        return this.getAlbum(this.albumIndex.get(id))
     }
 }
 
@@ -192,6 +241,7 @@ function main() {
     const playButton = document.getElementById('play-button')
     const skipButton = document.getElementById('skip-button')
     const labelElement = document.getElementById('caption')
+    const coverElement = document.getElementById('cover')
 
     const library = new MediaLibrary('/api')
     const player = new Player(audioElement, library)
@@ -200,8 +250,20 @@ function main() {
 
         if(song) {
             labelElement.textContent = `${song.artist} - ${song.title}`
+            coverElement.innerHTML = ''
+
+            library.getAlbumBySong(song.id).then((album: Album) => {
+                return album.getCover(library)
+            }).then((cover: Blob) => {
+                const image = <HTMLImageElement>document.createElement('img')
+                image.src = URL.createObjectURL(cover)
+                coverElement.appendChild(image)
+            }).catch((err) => {
+                console.error(err)
+            })
         } else {
             labelElement.textContent = ''
+            coverElement.innerHTML = ''
         }
 
         if(player.playing) {
@@ -209,7 +271,6 @@ function main() {
         } else {
             playButton.className = 'fa fa-play'
         }
-
     }
 
     library.shuffle().then((ids) => ids.map((id) => {
