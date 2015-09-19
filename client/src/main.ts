@@ -1,5 +1,7 @@
 /// <reference path="typings/whatwg-fetch/whatwg-fetch.d.ts" />
 
+const EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP'
+
 type SongID = string
 type AlbumID = string
 
@@ -257,7 +259,7 @@ class CoverSwitcher {
         this.currentElement.classList.remove('old')
 
         if(data === null) {
-            this.currentElement.src = ''
+            this.currentElement.src = EMPTY_IMAGE
             return
         }
 
