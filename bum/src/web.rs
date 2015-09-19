@@ -87,7 +87,7 @@ impl Router {
 
         // Parse into components, and urldecode
         let (path, query, _) = url::parse_path(path).unwrap();
-        let path = String::from("/") + &path.connect("/");
+        let path = String::from("/") + &path.join("/");
         let path = url::percent_encoding::lossy_utf8_percent_decode(path.as_bytes());
         let query = match query {
             Some(q) => q,
