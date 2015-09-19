@@ -17,7 +17,7 @@ body {
 button {
     border: 0.1pt transparent solid;
     color: white;
-    background-color: black;
+    background-color: transparent;
 
     transition: background-color 0.25s, border-color 0.25s;
 }
@@ -69,4 +69,21 @@ button#skip-button:active {
     min-height: 125px;
     margin-left: auto;
     margin-right: auto;
+}
+
+img.cover {
+    position: fixed;
+    top: 0px;
+    left: 0px;
+    right: 0px;
+    height: 100%;
+    opacity: 0.2;
+    z-index: -1;
+    margin: 0 auto;
+
+    transition: opacity 0.5s;
+}
+
+img.cover.old {
+    opacity: 0.0;
 }

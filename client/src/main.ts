@@ -48,6 +48,7 @@ class Album {
         }
 
         return self.fetch(`${library.root}/music/album/${this.id}/cover`).then((response) => {
+            if(!response.ok) { return null }
             return response.blob()
         }).then((data: Blob) => {
             this.cover = data
@@ -235,35 +236,64 @@ class Player {
     }
 }
 
+class CoverSwitcher {
+    elements: HTMLImageElement[]
+    curCover: Blob
+    cur: number
+
+    constructor(elements: HTMLImageElement[]) {
+        this.elements = elements.slice(0, 2)
+        this.curCover = null
+        this.cur = 0
+    }
+
+    switch(data: Blob) {
+        if(data === this.curCover) { return }
+
+        this.curCover = data
+
+        this.currentElement.classList.add('old')
+        this.cur = (this.cur + 1) % 2
+        this.currentElement.classList.remove('old')
+
+        if(data === null) {
+            this.currentElement.src = ''
+            return
+        }
+
+        this.currentElement.src = URL.createObjectURL(data)
+    }
+
+    get currentElement() {
+        return this.elements[this.cur]
+    }
+}
+
 function main() {
     const audioElement = <HTMLAudioElement>document.getElementById('player')
 
     const playButton = document.getElementById('play-button')
     const skipButton = document.getElementById('skip-button')
     const labelElement = document.getElementById('caption')
-    const coverElement = document.getElementById('cover')
 
+    const coverSwitcher = new CoverSwitcher(<HTMLImageElement[]>Array.from(document.getElementsByClassName('cover')))
     const library = new MediaLibrary('/api')
     const player = new Player(audioElement, library)
+
     player.onplay = () => {
         const song = player.playing || player.paused
 
         if(song) {
             labelElement.textContent = `${song.artist} - ${song.title}`
-            coverElement.innerHTML = ''
 
             library.getAlbumBySong(song.id).then((album: Album) => {
                 return album.getCover(library)
             }).then((cover: Blob) => {
-                const image = <HTMLImageElement>document.createElement('img')
-                image.src = URL.createObjectURL(cover)
-                coverElement.appendChild(image)
-            }).catch((err) => {
-                console.error(err)
+                coverSwitcher.switch(cover)
             })
         } else {
+            coverSwitcher.switch(null)
             labelElement.textContent = ''
-            coverElement.innerHTML = ''
         }
 
         if(player.playing) {
