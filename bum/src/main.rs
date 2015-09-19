@@ -128,11 +128,6 @@ impl SongHandler {
             _ => ()
         }
     }
-
-    fn handle_cover(&self, song: &media::Song, mut res: hyper::server::Response) {
-        res.headers_mut().set(hyper::header::ContentType::json());
-        *res.status_mut() = hyper::status::StatusCode::NotFound;
-    }
 }
 
 impl web::Handler for SongHandler {
@@ -158,7 +153,6 @@ impl web::Handler for SongHandler {
 
                 return self.handle_stream(song, quality, res);
             },
-            "cover" => return self.handle_cover(song, res),
             _ => panic!("Unknown component {}", component)
         };
     }
@@ -211,6 +205,19 @@ impl AlbumHandler {
             db: db.clone()
         };
     }
+
+    fn handle_metadata(&self, album: &media::Album, mut res: hyper::server::Response) {
+        *res.status_mut() = hyper::status::StatusCode::Ok;
+        res.headers_mut().set(hyper::header::ContentType::json());
+        res.send(json::encode(&album.to_json()).unwrap().as_bytes()).unwrap();
+    }
+
+    fn handle_cover(&self, album: &media::Album, req: &hyper::server::Request, mut res: hyper::server::Response) {
+        match album.cover {
+            Some(ref path) => { web::serve_file(path.clone(), req, res); },
+            None => { *res.status_mut() = hyper::status::StatusCode::NotFound; }
+        }
+    }
 }
 
 impl web::Handler for AlbumHandler {
@@ -226,9 +233,11 @@ impl web::Handler for AlbumHandler {
             }
         };
 
-        *res.status_mut() = hyper::status::StatusCode::Ok;
-        res.headers_mut().set(hyper::header::ContentType::json());
-        res.send(json::encode(&album.to_json()).unwrap().as_bytes()).unwrap();
+        match component {
+            "metadata" => return self.handle_metadata(album, res),
+            "cover" => return self.handle_cover(album, req, res),
+            _ => panic!("Unknown component {}", component)
+        };
     }
 }
 
@@ -268,7 +277,7 @@ fn main() {
 
     let mut router = web::Router::new();
     router.add_route(web::Method::Get, r"/api/music/songs", SongListHandler::new(&db));
-    router.add_route(web::Method::Get, r"/api/music/song/([\w\\-]+)/(metadata|stream|cover)", SongHandler::new(&db));
+    router.add_route(web::Method::Get, r"/api/music/song/([\w\\-]+)/(metadata|stream)", SongHandler::new(&db));
     router.add_route(web::Method::Get, r"/api/music/albums", AlbumListHandler::new(&db));
     router.add_route(web::Method::Get, r"/api/music/album/([\w\\-]+)/(metadata|cover)", AlbumHandler::new(&db));
     router.add_route(web::Method::Get, r"/(.*)", web::StaticHandler::new("../client/build"));

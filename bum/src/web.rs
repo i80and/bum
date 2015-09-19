@@ -118,101 +118,104 @@ pub struct StaticHandler {
     root: std::sync::Arc<std::path::PathBuf>
 }
 
+pub fn serve_file(mut path: std::path::PathBuf,
+                      req: &hyper::server::Request,
+                  mut res: hyper::server::Response) {
+    if std::fs::metadata(&path).unwrap().is_dir() {
+        path.push("index.html");
+        return serve_file(path, req, res);
+    }
+
+    let file = match std::fs::File::open(&path) {
+        Ok(m) => m,
+        Err(err) => match err.kind() {
+            std::io::ErrorKind::PermissionDenied => {
+                *res.status_mut() = hyper::status::StatusCode::Forbidden;
+                return;
+            },
+            _ => {
+                *res.status_mut() = hyper::status::StatusCode::NotFound;
+                return;
+            }
+        }
+    };
+
+    let metadata = file.metadata().unwrap();
+    res.headers_mut().set(hyper::header::ContentLength(metadata.len()));
+
+    // Get MIME type
+    let mut mimetype = mime::Mime(mime::TopLevel::Application,
+                                  mime::SubLevel::Ext(String::from("octet-stream")),
+                                  vec![]);
+    match path.extension() {
+        Some(ext) => {
+            mimetype = match &*(ext.to_string_lossy()) {
+                "html" => mime::Mime(mime::TopLevel::Text,
+                                  mime::SubLevel::Html,
+                                  vec![]),
+                "json" => mime::Mime(mime::TopLevel::Application,
+                                  mime::SubLevel::Json,
+                                  vec![]),
+                "png" => mime::Mime(mime::TopLevel::Image,
+                                  mime::SubLevel::Png,
+                                  vec![]),
+                "jpg" | "jpeg" => mime::Mime(mime::TopLevel::Image,
+                                  mime::SubLevel::Jpeg,
+                                  vec![]),
+                "txt" => mime::Mime(mime::TopLevel::Text,
+                                  mime::SubLevel::Plain,
+                                  vec![]),
+                "css" => mime::Mime(mime::TopLevel::Text,
+                                  mime::SubLevel::Css,
+                                  vec![]),
+                "js" => mime::Mime(mime::TopLevel::Application,
+                                  mime::SubLevel::Javascript,
+                                  vec![]),
+                "toml" => mime::Mime(mime::TopLevel::Text,
+                                  mime::SubLevel::Plain,
+                                  vec![]),
+                _ => mimetype
+            }
+        },
+        _ => ()
+    }
+    res.headers_mut().set(hyper::header::ContentType(mimetype));
+
+    // Check the If-Modified-Since against our mtime
+    let mtime = time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
+    let mut should_send = true;
+    match req.headers.get::<hyper::header::IfModifiedSince>() {
+        Some(&hyper::header::IfModifiedSince(hyper::header::HttpDate(query))) => {
+            should_send = query < mtime;
+        },
+        _ => ()
+    }
+
+    if !should_send {
+        *res.status_mut() = hyper::status::StatusCode::NotModified;
+        return;
+    }
+
+    let mut reader = std::io::BufReader::new(file);
+    let mut buf = [0; 1024];
+
+    *res.status_mut() = hyper::status::StatusCode::Ok;
+    res.headers_mut().set(hyper::header::LastModified(hyper::header::HttpDate(mtime)));
+    let mut res = res.start().unwrap();
+
+    loop {
+        let bytes = reader.read(&mut buf).unwrap();
+        if bytes == 0 { break; }
+        res.write_all(&buf[0..bytes]).unwrap();
+    }
+}
+
 impl StaticHandler {
     pub fn new<P: AsRef<std::path::Path>>(root: P) -> StaticHandler {
         let canonical_root = util::canonicalize(root.as_ref()).unwrap();
         return StaticHandler {
             root: std::sync::Arc::new(canonical_root)
         };
-    }
-
-    fn serve_file(&self, mut path: std::path::PathBuf,
-                             req: &hyper::server::Request,
-                         mut res: hyper::server::Response) {
-        if std::fs::metadata(&path).unwrap().is_dir() {
-            path.push("index.html");
-            return self.serve_file(path, req, res);
-        }
-
-        let file = match std::fs::File::open(&path) {
-            Ok(m) => m,
-            Err(err) => match err.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    *res.status_mut() = hyper::status::StatusCode::Forbidden;
-                    return;
-                },
-                _ => {
-                    *res.status_mut() = hyper::status::StatusCode::NotFound;
-                    return;
-                }
-            }
-        };
-
-        let metadata = file.metadata().unwrap();
-        res.headers_mut().set(hyper::header::ContentLength(metadata.len()));
-
-        // Get MIME type
-        let mut mimetype = mime::Mime(mime::TopLevel::Application,
-                                      mime::SubLevel::Ext(String::from("octet-stream")),
-                                      vec![]);
-        match path.extension() {
-            Some(ext) => {
-                mimetype = match &*(ext.to_string_lossy()) {
-                    "html" => mime::Mime(mime::TopLevel::Text,
-                                      mime::SubLevel::Html,
-                                      vec![]),
-                    "json" => mime::Mime(mime::TopLevel::Application,
-                                      mime::SubLevel::Json,
-                                      vec![]),
-                    "png" => mime::Mime(mime::TopLevel::Image,
-                                      mime::SubLevel::Png,
-                                      vec![]),
-                    "txt" => mime::Mime(mime::TopLevel::Text,
-                                      mime::SubLevel::Plain,
-                                      vec![]),
-                    "css" => mime::Mime(mime::TopLevel::Text,
-                                      mime::SubLevel::Css,
-                                      vec![]),
-                    "js" => mime::Mime(mime::TopLevel::Application,
-                                      mime::SubLevel::Javascript,
-                                      vec![]),
-                    "toml" => mime::Mime(mime::TopLevel::Text,
-                                      mime::SubLevel::Plain,
-                                      vec![]),
-                    _ => mimetype
-                }
-            },
-            _ => ()
-        }
-        res.headers_mut().set(hyper::header::ContentType(mimetype));
-
-        // Check the If-Modified-Since against our mtime
-        let mtime = time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
-        let mut should_send = true;
-        match req.headers.get::<hyper::header::IfModifiedSince>() {
-            Some(&hyper::header::IfModifiedSince(hyper::header::HttpDate(query))) => {
-                should_send = query < mtime;
-            },
-            _ => ()
-        }
-
-        if !should_send {
-            *res.status_mut() = hyper::status::StatusCode::NotModified;
-            return;
-        }
-
-        let mut reader = std::io::BufReader::new(file);
-        let mut buf = [0; 1024];
-
-        *res.status_mut() = hyper::status::StatusCode::Ok;
-        res.headers_mut().set(hyper::header::LastModified(hyper::header::HttpDate(mtime)));
-        let mut res = res.start().unwrap();
-
-        loop {
-            let bytes = reader.read(&mut buf).unwrap();
-            if bytes == 0 { break; }
-            res.write_all(&buf[0..bytes]).unwrap();
-        }
     }
 }
 
@@ -239,7 +242,7 @@ impl Handler for StaticHandler {
             return;
         }
 
-        return self.serve_file(path, req, res);
+        return serve_file(path, req, res);
     }
 }
 

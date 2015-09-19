@@ -27,7 +27,8 @@ pub struct Album {
     pub id: AlbumID,
     pub title: String,
     pub year: String,
-    pub tracks: Vec<SongID>
+    pub tracks: Vec<SongID>,
+    pub cover: Option<std::path::PathBuf>
 }
 
 #[derive(Debug)]
@@ -158,6 +159,21 @@ impl MediaDatabase {
             _ => return Err(String::from("Need valid 'year'"))
         };
 
+        let cover = match doc.get("cover") {
+            Some(&toml::Value::String(ref path)) => {
+                let mut cover = std::path::PathBuf::from(prefix);
+                cover.push(path);
+                match util::canonicalize(cover.as_ref()) {
+                    Ok(p) => Some(p),
+                    _ => {
+                        println!("Path '{}' not found", &cover.to_string_lossy());
+                        None
+                    }
+                }
+            },
+            _ => None
+        };
+
         let mut i = 0;
         let tracks = match doc.get("tracks") {
             Some(&toml::Value::Array(ref a)) => a.iter().filter_map(|x| {
@@ -195,7 +211,8 @@ impl MediaDatabase {
             id: id.clone(),
             title: title,
             year: year,
-            tracks: tracks
+            tracks: tracks,
+            cover: cover
         };
 
         self.albums.insert(album.id.clone(), album);
