@@ -1,14 +1,16 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
+#[macro_use]
 
+extern crate clap;
 extern crate hyper;
+extern crate libc;
 extern crate queryst;
 extern crate regex;
 extern crate rustc_serialize;
 extern crate time;
 extern crate toml;
 extern crate url;
-extern crate libc;
 
 use rustc_serialize::json;
 use rustc_serialize::json::ToJson;
@@ -273,7 +275,22 @@ impl web::Handler for AlbumListHandler {
 }
 
 fn main() {
-    let db = std::sync::Arc::new(media::MediaDatabase::load(&std::env::current_dir().unwrap()).unwrap());
+    let matches = clap::App::new("bum")
+                          .version(&crate_version!()[..])
+                          .author("Andrew Aldridge <i80and@foxquill.com>")
+                          .about("Start the bum media server.")
+                          .args_from_usage(
+                              "-m --media=[PATH] 'Set the path to search for media'
+                               -p --port=[PORT] 'Set the port to run on [default: 80]'")
+                          .get_matches();
+
+    let media_path = match matches.value_of("PATH") {
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::env::current_dir().unwrap()
+    };
+    let port = matches.value_of("PORT").unwrap_or("80");
+
+    let db = std::sync::Arc::new(media::MediaDatabase::load(&media_path).unwrap());
 
     let mut router = web::Router::new();
     router.add_route(web::Method::Get, r"/api/music/songs", SongListHandler::new(&db));
@@ -282,5 +299,9 @@ fn main() {
     router.add_route(web::Method::Get, r"/api/music/album/([\w\\-]+)/(metadata|cover)", AlbumHandler::new(&db));
     router.add_route(web::Method::Get, r"/(.*)", web::StaticHandler::new("../client/build"));
 
-    web::listen("127.0.0.1:8080", router);
+    match web::listen(&format!("127.0.0.1:{}", port), router) {
+        Err(hyper::error::Error::Io(msg)) => println!("Failed to start server: {}", msg),
+        Err(msg) => println!("Failed to start server: {}", msg),
+        _ => ()
+    }
 }
