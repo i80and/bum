@@ -58,6 +58,12 @@ class Album {
         })
     }
 
+    compare(other: Album): number {
+        if (this.year > other.year) { return 1 }
+        if (this.year < other.year) { return -1 }
+        return 0
+    }
+
     static parse(data: {id: string, title: string, year: string, tracks: SongID[], cover: string}) {
         return new Album(data.id, data.title, data.year, data.tracks, data.cover)
     }
@@ -147,6 +153,19 @@ class MediaLibrary {
         }
     }
 
+    getAlbums() {
+        const albums: Album[] = []
+        return Promise.all(this.albums.map((id) => {
+            return this.getAlbum(id).then((album: Album) => {
+                albums.push(album)
+            }).catch((err) => {
+                console.error(err)
+            })
+        })).then(() => {
+            return albums
+        })
+    }
+
     getAlbum(id: AlbumID) {
         if(this.albumCache.has(id)) {
             return new Promise((resolve, reject) => { resolve(this.albumCache.get(id)) })
@@ -198,7 +217,7 @@ class Player {
     }
 
     play(songs: Song[]) {
-        this.playlist = songs.slice()
+        this.playlist = songs.reverse()
         this.doPlay()
     }
 
@@ -219,6 +238,14 @@ class Player {
 
     skip() {
         this.doPlay()
+    }
+
+    shuffle() {
+        this.library.shuffle().then((ids) => ids.map((id) => {
+            return this.library.getSong(id)
+        })).then((songs) => {
+            this.play(songs)
+        })
     }
 
     doPlay() {
@@ -274,6 +301,8 @@ class CoverSwitcher {
 function main() {
     const audioElement = <HTMLAudioElement>document.getElementById('player')
 
+    const albumsButton = document.getElementById('albums-button')
+    const albumsList = document.getElementById('album-list')
     const playButton = document.getElementById('play-button')
     const skipButton = document.getElementById('skip-button')
     const labelElement = document.getElementById('caption')
@@ -281,6 +310,8 @@ function main() {
     const coverSwitcher = new CoverSwitcher(<HTMLImageElement[]>Array.from(document.getElementsByClassName('cover')))
     const library = new MediaLibrary('/api')
     const player = new Player(audioElement, library)
+
+    library.refresh()
 
     player.onplay = () => {
         const song = player.playing || player.paused
@@ -305,21 +336,70 @@ function main() {
         }
     }
 
-    library.shuffle().then((ids) => ids.map((id) => {
-        return library.getSong(id)
-    })).then((songs) => {
-        playButton.addEventListener('click', function() {
-            if(player.playing) {
-                player.togglePause()
-            } else if(player.paused) {
-                player.togglePause()
-            } else {
-                player.play(songs)
-            }
-        })
+    playButton.addEventListener('click', function() {
+        if(player.playing) {
+            player.togglePause()
+        } else if(player.paused) {
+            player.togglePause()
+        } else {
+            player.shuffle()
+        }
+    })
 
-        skipButton.addEventListener('click', function() {
-            player.skip()
+    skipButton.addEventListener('click', function() {
+        player.skip()
+    })
+
+    let shown = false
+    albumsButton.addEventListener('click', function() {
+        if(shown) {
+            albumsList.innerHTML = ''
+            shown = false
+            return
+        }
+
+        shown = true
+        library.getAlbums().then((albums) => {
+            albums.sort((a, b) => { return a.compare(b) })
+            albumsList.innerHTML = ''
+
+            // Add the "shuffle" entry
+            {
+                const el = document.createElement('div')
+                el.addEventListener('click', () => { player.shuffle() })
+
+                const label = document.createElement('span')
+                label.className = 'fa fa-random'
+                label.title = 'Shuffle'
+
+                el.appendChild(label)
+                albumsList.appendChild(el)
+            }
+
+            for(let album of albums) {
+                const el = document.createElement('div')
+                el.addEventListener('click', function() {
+                    console.log(album.tracks)
+                    const songs = album.tracks.map((id) => {
+                        return library.getSong(id)
+                    })
+
+                    player.play(songs)
+                })
+
+                album.getCover(library).then((blob: Blob) => {
+                    if(blob !== null) {
+                        el.style.backgroundImage = `url(${URL.createObjectURL(blob) })`
+                        el.style.backgroundColor = 'transparent'
+                    } else {
+                        el.style.backgroundImage = ''
+                        el.style.backgroundColor = '#ccc'
+                    }
+
+                })
+
+                albumsList.appendChild(el)
+            }
         })
     })
 }
