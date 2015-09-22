@@ -62,7 +62,13 @@ impl MediaDatabase {
             if extension == "toml" {
                 let mut contents = String::new();
                 let mut file = std::fs::File::open(path_str).unwrap();
-                file.read_to_string(&mut contents).unwrap();
+                match file.read_to_string(&mut contents) {
+                    Ok(_) => (),
+                    Err(_) => {
+                        println!("Non-textual file {}", path_str);
+                        return;
+                    }
+                }
 
                 let mut parser = toml::Parser::new(&contents);
                 let parsed = match parser.parse() {
