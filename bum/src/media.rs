@@ -26,6 +26,7 @@ pub struct Song {
 pub struct Album {
     pub id: AlbumID,
     pub title: String,
+    pub compiler: String,
     pub year: String,
     pub tracks: Vec<SongID>,
     pub cover: Option<std::path::PathBuf>
@@ -181,6 +182,7 @@ impl MediaDatabase {
         };
 
         let mut i = 0;
+        let mut artists = Vec::new();
         let tracks = match doc.get("tracks") {
             Some(&toml::Value::Array(ref a)) => a.iter().filter_map(|x| {
                 let table = match x {
@@ -204,6 +206,8 @@ impl MediaDatabase {
                     _ => ()
                 }
 
+                artists.push(song.artist.clone());
+
                 let result = Some(song.id.clone());
                 self.index_song_album.insert(song.id.clone(), id.clone());
                 self.songs.insert(song.id.clone(), song);
@@ -213,9 +217,22 @@ impl MediaDatabase {
             _ => Vec::new()
         };
 
+        let compiler = match doc.get("compiler") {
+            Some(&toml::Value::String(ref t)) => t.clone(),
+            _ => artists.iter().fold(String::new(), |prev, cur| {
+                if prev.is_empty() {
+                    return cur.clone();
+                }
+
+                if prev == *cur { return prev; }
+                return String::from("Various Artists");
+            })
+        };
+
         let album = Album {
             id: id.clone(),
             title: title,
+            compiler: String::from(compiler),
             year: year,
             tracks: tracks,
             cover: cover

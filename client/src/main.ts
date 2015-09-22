@@ -29,14 +29,16 @@ function shuffle<T>(array: T[]): T[] {
 class Album {
     id: AlbumID
     title: string
+    compiler: string
     year: string
     tracks: SongID[]
     private coverPath: string
     private cover: Blob
 
-    constructor(id: AlbumID, title: string, year: string, tracks: SongID[], cover: string) {
+    constructor(id: AlbumID, title: string, compiler: string, year: string, tracks: SongID[], cover: string) {
         this.id = id
         this.title = title
+        this.compiler = compiler
         this.year = year
         this.tracks = tracks
 
@@ -59,13 +61,21 @@ class Album {
     }
 
     compare(other: Album): number {
-        if (this.year > other.year) { return 1 }
-        if (this.year < other.year) { return -1 }
+        const thisCompiler = this.compiler.toLowerCase().split(/^"|the\W/i).join('')
+        const otherCompiler = other.compiler.toLowerCase().split(/^"|the\W/i).join('')
+
+        if(thisCompiler > otherCompiler) { return 1 }
+        if(thisCompiler < otherCompiler) { return -1 }
+
+        // Tie-break using year
+        if(this.year > other.year) { return 1 }
+        if(this.year < other.year) { return -1 }
+
         return 0
     }
 
-    static parse(data: {id: string, title: string, year: string, tracks: SongID[], cover: string}) {
-        return new Album(data.id, data.title, data.year, data.tracks, data.cover)
+    static parse(data: {id: string, title: string, compiler: string, year: string, tracks: SongID[], cover: string}) {
+        return new Album(data.id, data.title, data.compiler, data.year, data.tracks, data.cover)
     }
 }
 
@@ -379,7 +389,6 @@ function main() {
             for(let album of albums) {
                 const el = document.createElement('div')
                 el.addEventListener('click', function() {
-                    console.log(album.tracks)
                     const songs = album.tracks.map((id) => {
                         return library.getSong(id)
                     })
