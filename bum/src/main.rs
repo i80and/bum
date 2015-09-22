@@ -280,15 +280,15 @@ fn main() {
                           .author("Andrew Aldridge <i80and@foxquill.com>")
                           .about("Start the bum media server.")
                           .args_from_usage(
-                              "-m --media=[PATH] 'Set the path to search for media'
-                               -p --port=[PORT] 'Set the port to run on [default: 80]'")
+                              "-m --media=[PATH] 'Set the path to search for media [default: ./]'
+                               -l --listen=[HOST] 'Set the host to listen on [default: 127.0.0.1:8080]'")
                           .get_matches();
 
     let media_path = match matches.value_of("PATH") {
         Some(p) => std::path::PathBuf::from(p),
         None => std::env::current_dir().unwrap()
     };
-    let port = matches.value_of("PORT").unwrap_or("80");
+    let host = matches.value_of("HOST").unwrap_or("127.0.0.1:8080");
 
     let db = std::sync::Arc::new(media::MediaDatabase::load(&media_path).unwrap());
 
@@ -299,7 +299,8 @@ fn main() {
     router.add_route(web::Method::Get, r"/api/music/album/([\w\\-]+)/(metadata|cover)", AlbumHandler::new(&db));
     router.add_route(web::Method::Get, r"/(.*)", web::StaticHandler::new("../client/build"));
 
-    match web::listen(&format!("127.0.0.1:{}", port), router) {
+    println!("Preparing to listen on {}", host);
+    match web::listen(host, router) {
         Err(hyper::error::Error::Io(msg)) => println!("Failed to start server: {}", msg),
         Err(msg) => println!("Failed to start server: {}", msg),
         _ => ()
