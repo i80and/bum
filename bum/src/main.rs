@@ -11,6 +11,7 @@ extern crate rustc_serialize;
 extern crate time;
 extern crate toml;
 extern crate url;
+extern crate taglib;
 
 use rustc_serialize::json;
 use rustc_serialize::json::ToJson;
@@ -34,7 +35,7 @@ struct AlbumListEntry<'a> {
     id: &'a str,
     title: &'a str,
     compiler: &'a str,
-    year: &'a str
+    year: u32
 }
 
 impl<'a> json::ToJson for SongListEntry<'a> {
@@ -266,7 +267,7 @@ impl web::Handler for AlbumListHandler {
                 id: &album.id,
                 title: &album.title,
                 compiler: &album.compiler,
-                year: &album.year,
+                year: album.year.unwrap_or(0),
             };
 
             albums.push(entry.to_json());

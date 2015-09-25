@@ -2,6 +2,7 @@ use std;
 use std::io::Read;
 use toml;
 use util;
+use taglib;
 
 enum MediaDescriptionType {
     Album,
@@ -19,6 +20,7 @@ pub struct Song {
     pub id: SongID,
     pub title: String,
     pub artist: String,
+    pub year: Option<u32>,
     pub path: std::path::PathBuf
 }
 
@@ -27,7 +29,7 @@ pub struct Album {
     pub id: AlbumID,
     pub title: String,
     pub compiler: String,
-    pub year: String,
+    pub year: Option<u32>,
     pub tracks: Vec<SongID>,
     pub cover: Option<std::path::PathBuf>
 }
@@ -162,7 +164,7 @@ impl MediaDatabase {
         };
 
         let year = match doc.get("year") {
-            Some(&toml::Value::String(ref t)) => t.clone(),
+            Some(&toml::Value::String(ref t)) => t.parse::<u32>().ok(),
             _ => return Err(String::from("Need valid 'year'"))
         };
 
@@ -193,7 +195,13 @@ impl MediaDatabase {
                 let song_id = format!("{}-{}", id, i);
                 i += 1;
 
-                let mut song = match self.parse_song(prefix, &song_id, table) {
+                let mut song_path = std::path::PathBuf::from(prefix);
+                song_path.push(match table.get("path") {
+                    Some(&toml::Value::String(ref t)) => t.clone(),
+                    _ => return None
+                });
+
+                let mut song = match self.parse_song(&song_path, &song_id) {
                     Ok(s) => s,
                     Err(msg) => {
                         println!("{}", msg);
@@ -243,35 +251,38 @@ impl MediaDatabase {
         return Ok(());
     }
 
-    fn parse_song(&self, prefix: &std::path::Path,
-                         id: &SongID,
-                         doc: &toml::Table) -> Result<Song, String> {
-        let title = match doc.get("title") {
-            Some(&toml::Value::String(ref t)) => t.clone(),
-            _ => return Err(String::from("Need valid 'title'"))
+    fn parse_song(&self, path: &std::path::Path, id: &SongID) -> Result<Song, String> {
+        let path = std::path::PathBuf::from(path);
+        let tag_file = match taglib::File::new(&path.to_string_lossy()) {
+            Ok(t) => t,
+            Err(_) => return Err(format!("Failed to load file {:?}", path))
         };
 
-        let artist = match doc.get("artist") {
-            Some(&toml::Value::String(ref t)) => t.clone(),
-            _ => String::new()
+        let tags = match tag_file.tag() {
+            Ok(t) => t,
+            Err(_) => return Err(format!("Failed to parse file {:?}", path))
         };
 
-        let mut path = std::path::PathBuf::from(prefix);
-        path.push(match doc.get("path") {
-            Some(&toml::Value::String(ref t)) => t.clone(),
-            _ => return Err(String::from("Need valid 'path'"))
-        });
+        let title = match tags.title() {
+            ref x if x.is_empty() => return Err(format!("Need valid 'title' in track {:?}", path)),
+            x => x
+        };
 
-        // Check to make sure the given path exists
-        match std::fs::metadata(&path) {
-            Ok(ref m) if m.is_file() => (),
-            _ => { return Err(String::from(format!("Path '{}' not found", &path.to_string_lossy()))); }
-        }
+        let year = match tags.year() {
+            0 => None,
+            x => Some(x)
+        };
+
+        let artist = match tags.artist() {
+            ref a if a.is_empty() => return Err(format!("Need valid 'artist' in track {:?}", path)),
+            a => a
+        };
 
         return Ok(Song {
             id: id.clone(),
             title: title,
             artist: artist,
+            year: year,
             path: path
         });
     }
