@@ -231,7 +231,10 @@ impl MediaDatabase {
 
         let tracks = songs.iter().map(|song| song.id.clone()).collect();
         for song in songs {
-            self.songs.insert(song.id.clone(), song);
+            match self.songs.insert(song.id.clone(), song) {
+                Some(ref dup) => { println!("Duplicate ID {}", dup.id); },
+                _ => ()
+            }
         }
 
         let compiler = match doc.get("compiler") {
