@@ -53,6 +53,8 @@ static gboolean remove_image(GstPad* pad,
             ret = gst_pad_push_event(sink, event);
             gst_object_unref(sink);
             return ret;
+        default:
+            break;
     }
 
     return gst_pad_event_default(pad, parent, event);

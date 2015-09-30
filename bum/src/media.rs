@@ -2,7 +2,7 @@ use std;
 use std::io::Read;
 use toml;
 use util;
-use taglib;
+use tagparser;
 
 enum MediaDescriptionType {
     Album,
@@ -20,6 +20,7 @@ pub struct Song {
     pub id: SongID,
     pub title: String,
     pub track: u32,
+    pub disc: u32,
     pub artist: String,
     pub year: Option<u32>,
     pub path: std::path::PathBuf
@@ -184,7 +185,6 @@ impl MediaDatabase {
             _ => None
         };
 
-        let mut i = 0;
         let mut artists = Vec::new();
         let mut songs = match doc.get("tracks") {
             Some(&toml::Value::Array(ref a)) => a.iter().filter_map(|x| {
@@ -193,16 +193,13 @@ impl MediaDatabase {
                     _ => return None
                 };
 
-                let song_id = format!("{}-{}", id, i);
-                i += 1;
-
                 let mut song_path = std::path::PathBuf::from(prefix);
                 song_path.push(match table.get("path") {
                     Some(&toml::Value::String(ref t)) => t.clone(),
                     _ => return None
                 });
 
-                let mut song = match self.parse_song(&song_path, &song_id) {
+                let mut song = match self.parse_song(&song_path, &id) {
                     Ok(s) => s,
                     Err(msg) => {
                         println!("{}", msg);
@@ -223,7 +220,15 @@ impl MediaDatabase {
             _ => Vec::new()
         };
 
-        songs.sort_by(|a, b| a.track.cmp(&b.track));
+        // Sort by disc, then track
+        songs.sort_by(|a, b| {
+            match a.disc.cmp(&b.disc) {
+                std::cmp::Ordering::Equal => (),
+                c => return c
+            }
+            return a.track.cmp(&b.track);
+        });
+
         let tracks = songs.iter().map(|song| song.id.clone()).collect();
         for song in songs {
             self.songs.insert(song.id.clone(), song);
@@ -255,40 +260,37 @@ impl MediaDatabase {
         return Ok(());
     }
 
-    fn parse_song(&self, path: &std::path::Path, id: &SongID) -> Result<Song, String> {
-        let path = std::path::PathBuf::from(path);
-        let tag_file = match taglib::File::new(&path.to_string_lossy()) {
-            Ok(t) => t,
-            Err(_) => return Err(format!("Failed to load file {:?}", path))
-        };
-
-        let tags = match tag_file.tag() {
+    fn parse_song(&self, path: &std::path::Path, album_id: &AlbumID) -> Result<Song, String> {
+        let tags = match tagparser::Tags::new(&path) {
             Ok(t) => t,
             Err(_) => return Err(format!("Failed to parse file {:?}", path))
         };
 
         let title = match tags.title() {
-            ref x if x.is_empty() => return Err(format!("Need valid 'title' in track {:?}", path)),
-            x => x
+            Some(x) => x,
+            None => return Err(format!("Need valid 'title' in track {:?}", path))
         };
 
-        let year = match tags.year() {
-            0 => None,
-            x => Some(x)
-        };
+        let year = tags.year();
 
         let artist = match tags.artist() {
-            ref a if a.is_empty() => return Err(format!("Need valid 'artist' in track {:?}", path)),
-            a => a
+            Some(a) => a,
+            None => return Err(format!("Need valid 'artist' in track {:?}", path)),
         };
 
+        let (track,_) = tags.track();
+        let track = track.unwrap_or(0);
+        let (disc,_) = tags.disc();
+        let disc = disc.unwrap_or(0);
+
         return Ok(Song {
-            id: id.clone(),
-            title: title,
-            track: tags.track(),
-            artist: artist,
+            id: format!("{}-{}-{}", album_id, disc, track),
+            title: String::from(title),
+            track: track,
+            disc: disc,
+            artist: String::from(artist),
             year: year,
-            path: path
+            path: std::path::PathBuf::from(path)
         });
     }
 }

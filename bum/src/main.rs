@@ -11,7 +11,6 @@ extern crate rustc_serialize;
 extern crate time;
 extern crate toml;
 extern crate url;
-extern crate taglib;
 
 use rustc_serialize::json;
 use rustc_serialize::json::ToJson;
@@ -23,6 +22,7 @@ mod web;
 mod util;
 mod media;
 mod transcode;
+mod tagparser;
 
 struct SongListEntry<'a> {
     id: &'a str,

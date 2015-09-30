@@ -22,7 +22,6 @@ hyper = "0.6"
 url = "0.2"
 time = "0.1"
 clap = "1.4"
-taglib = "0.1"
 
 [build-dependencies]
 gcc = "0.3"
