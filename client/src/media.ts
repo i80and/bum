@@ -25,16 +25,16 @@ function shuffle<T>(array: T[]): T[] {
 export class Album {
     id: AlbumID
     title: string
-    compiler: string
+    albumArtist: string
     year: string
     tracks: SongID[]
     private coverPath: string
     private cover: Blob
 
-    constructor(id: AlbumID, title: string, compiler: string, year: string, tracks: SongID[], cover: string) {
+    constructor(id: AlbumID, title: string, albumArtist: string, year: string, tracks: SongID[], cover: string) {
         this.id = id
         this.title = title
-        this.compiler = compiler
+        this.albumArtist = albumArtist
         this.year = year
         this.tracks = tracks
 
@@ -57,8 +57,8 @@ export class Album {
     }
 
     compare(other: Album): number {
-        const thisCompiler = this.compiler.toLowerCase().split(/^"|the\W/i).join('')
-        const otherCompiler = other.compiler.toLowerCase().split(/^"|the\W/i).join('')
+        const thisCompiler = this.albumArtist.toLowerCase().split(/^"|the\W/i).join('')
+        const otherCompiler = other.albumArtist.toLowerCase().split(/^"|the\W/i).join('')
 
         if(thisCompiler > otherCompiler) { return 1 }
         if(thisCompiler < otherCompiler) { return -1 }
@@ -70,8 +70,8 @@ export class Album {
         return 0
     }
 
-    static parse(data: {id: string, title: string, compiler: string, year: string, tracks: SongID[], cover: string}) {
-        return new Album(data.id, data.title, data.compiler, data.year, data.tracks, data.cover)
+    static parse(data: {id: string, title: string, album_artist: string, year: string, tracks: SongID[], cover: string}) {
+        return new Album(data.id, data.title, data.album_artist, data.year, data.tracks, data.cover)
     }
 }
 

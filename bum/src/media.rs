@@ -30,7 +30,7 @@ pub struct Song {
 pub struct Album {
     pub id: AlbumID,
     pub title: String,
-    pub compiler: String,
+    pub album_artist: String,
     pub year: Option<u32>,
     pub tracks: Vec<SongID>,
     pub cover: Option<std::path::PathBuf>
@@ -237,7 +237,7 @@ impl MediaDatabase {
             }
         }
 
-        let compiler = match doc.get("compiler") {
+        let album_artist = match doc.get("album-artist") {
             Some(&toml::Value::String(ref t)) => t.clone(),
             _ => artists.iter().fold(String::new(), |prev, cur| {
                 if prev.is_empty() {
@@ -252,7 +252,7 @@ impl MediaDatabase {
         let album = Album {
             id: id.clone(),
             title: title,
-            compiler: String::from(compiler),
+            album_artist: String::from(album_artist),
             year: year,
             tracks: tracks,
             cover: cover
