@@ -4,6 +4,8 @@ use toml;
 use util;
 use tagparser;
 
+const MUSIC_EXTENSIONS: [&'static str; 8] = ["opus", "ogg", "oga", "flac", "mp3", "mp4", "m4a", "wma"];
+
 enum MediaDescriptionType {
     Album,
     Movie
@@ -45,8 +47,6 @@ pub struct MediaDatabase {
 
     index_song_album: std::collections::HashMap<SongID, AlbumID>
 }
-
-const MUSIC_EXTENSIONS: [&'static str; 6] = ["ogg", "oga", "flac", "mp3", "mp4", "m4a"];
 
 impl MediaDatabase {
     pub fn load(root: &std::path::Path) -> Result<MediaDatabase, String> {
