@@ -79,8 +79,15 @@ impl Tags {
         };
     }
 
+    pub fn album<'a>(&'a self) -> Option<&'a str> {
+        return match self.tags.get("ALBUM") {
+            Some(s) => Some(s),
+            None => None
+        };
+    }
+
     pub fn year(&self) -> Option<u32> {
-        return match self.tags.get("YEAR") {
+        return match self.tags.get("DATE") {
             Some(s) => s.parse::<u32>().ok().and_then(|t| Some(t)),
             None => None
         };
