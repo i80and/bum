@@ -43,8 +43,12 @@ export class Album {
     }
 
     getCover(library: MediaLibrary) {
+        if(!this.coverPath) {
+            return new Promise((resolve, reject) => { resolve(null) })
+        }
+
         if(this.cover) {
-            return new Promise((resolve, reject) => { resolve(this.cover); })
+            return new Promise((resolve, reject) => { resolve(this.cover) })
         }
 
         return self.fetch(`${library.root}/music/album/${this.id}/cover`).then((response) => {

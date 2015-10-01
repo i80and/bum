@@ -82,6 +82,10 @@ impl json::ToJson for media::Album {
         d.insert("album_artist".to_string(), self.album_artist.to_json());
         d.insert("year".to_string(), self.year.to_json());
         d.insert("tracks".to_string(), self.tracks.to_json());
+        d.insert("cover".to_string(), match self.cover {
+            Some(ref path) => path.to_str().and_then(|p| Some(String::from(p))),
+            None => None
+        }.to_json());
 
         return json::Json::Object(d);
     }

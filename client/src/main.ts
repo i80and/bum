@@ -207,11 +207,19 @@ function main() {
 
                 album.getCover(library).then((blob: Blob) => {
                     if(blob !== null) {
+                        el.innerHTML = ''
                         el.style.backgroundImage = `url(${URL.createObjectURL(blob) })`
                         el.style.backgroundColor = 'transparent'
                     } else {
+                        const artistElement = document.createElement('div')
+                        const titleElement = document.createElement('div')
+
+                        artistElement.textContent = album.albumArtist
+                        titleElement.textContent = album.title
+
+                        el.appendChild(artistElement)
+                        el.appendChild(titleElement)
                         el.style.backgroundImage = ''
-                        el.style.backgroundColor = '#ccc'
                     }
 
                 })
