@@ -46,6 +46,8 @@ pub struct MediaDatabase {
     index_song_album: std::collections::HashMap<SongID, AlbumID>
 }
 
+const MUSIC_EXTENSIONS: [&'static str; 6] = ["ogg", "oga", "flac", "mp3", "mp4", "m4a"];
+
 impl MediaDatabase {
     pub fn load(root: &std::path::Path) -> Result<MediaDatabase, String> {
         let mut db = MediaDatabase {
@@ -55,12 +57,17 @@ impl MediaDatabase {
             index_song_album: std::collections::HashMap::new()
         };
 
+        let mut album_prefixes = std::collections::HashMap::new();
+        let mut song_prefixes = std::collections::HashMap::new();
+
         util::visit_dirs(root, &mut |dirname, entry| {
             let path = entry.path();
             let extension = match path.extension() {
                 Some(ext) => ext,
                 None => return
             };
+
+            let album_prefix = std::path::PathBuf::from(path.parent().unwrap());
 
             let path_str = path.to_str().unwrap();
 
@@ -118,11 +125,72 @@ impl MediaDatabase {
                 };
 
                 match media_type {
-                    MediaDescriptionType::Album => db.parse_album(dirname, &album_id, &parsed).unwrap(),
+                    MediaDescriptionType::Album => {
+                        db.parse_album(dirname, &album_id, &parsed).unwrap();
+                        album_prefixes.insert(album_prefix, album_id);
+                    },
                     MediaDescriptionType::Movie => ()
                 };
+            } else if MUSIC_EXTENSIONS.iter().find(|e| **e == extension).is_some() {
+                let mut songs = song_prefixes.entry(album_prefix).or_insert(vec!());
+                songs.push(std::path::PathBuf::from(&path));
             }
         }).unwrap();
+
+        // Track the artists that appear in an album. If more than half of an
+        // album has the same artist, consider that artist the "album artist".
+        // Otherwise, fall back to "Various Artists".
+        let mut album_artists = std::collections::HashMap::<String, u32>::new();
+
+        // Associate songs with albums
+        for (k,album_id) in album_prefixes.iter() {
+            album_artists.clear();
+            let song_paths = match song_prefixes.get(k) {
+                Some(s) => s,
+                None => continue
+            };
+
+            let mut songs: Vec<Song> = song_paths.iter().filter_map(|path| {
+                db.parse_song(path, album_id).ok()
+            }).collect();
+
+            // Reverse-order so that we can pop off the end and get a sorted
+            // track list.
+            songs.sort_by(|a, b| {
+                match a.disc.cmp(&b.disc) {
+                    std::cmp::Ordering::Equal => (),
+                    c => return c.reverse()
+                }
+                return a.track.cmp(&b.track).reverse();
+            });
+
+            let mut album = db.albums.get_mut(album_id).unwrap();
+
+            // Register each song in the database
+            while !songs.is_empty() {
+                let song = songs.pop().unwrap();
+                *(album_artists.entry(song.artist.clone()).or_insert(0)) += 1;
+
+                album.tracks.push(song.id.clone());
+                db.index_song_album.insert(song.id.clone(), album_id.clone());
+                db.songs.insert(song.id.clone(), song);
+            }
+
+            // Find the artist with majority status in this album
+            let threshold = album.tracks.len() as u32 / 2;
+            let mut album_artist = None;
+            for (artist,n) in album_artists.iter() {
+                if *n >= threshold {
+                    album_artist = Some(artist.clone());
+                    break;
+                }
+            }
+
+            match album_artist {
+                Some(aa) => album.album_artist = aa,
+                None => album.album_artist = String::from("Various Artists")
+            }
+        }
 
         return Ok(db);
     }
@@ -185,76 +253,12 @@ impl MediaDatabase {
             _ => None
         };
 
-        let mut artists = Vec::new();
-        let mut songs = match doc.get("tracks") {
-            Some(&toml::Value::Array(ref a)) => a.iter().filter_map(|x| {
-                let table = match x {
-                    &toml::Value::Table(ref t) => t,
-                    _ => return None
-                };
-
-                let mut song_path = std::path::PathBuf::from(prefix);
-                song_path.push(match table.get("path") {
-                    Some(&toml::Value::String(ref t)) => t.clone(),
-                    _ => return None
-                });
-
-                let mut song = match self.parse_song(&song_path, &id) {
-                    Ok(s) => s,
-                    Err(msg) => {
-                        println!("{}", msg);
-                        return None;
-                    }
-                };
-
-                match song.artist.as_ref() {
-                    "" => song.artist = default_artist.clone(),
-                    _ => ()
-                }
-
-                artists.push(song.artist.clone());
-                self.index_song_album.insert(song.id.clone(), id.clone());
-
-                return Some(song);
-            }).collect(),
-            _ => Vec::new()
-        };
-
-        // Sort by disc, then track
-        songs.sort_by(|a, b| {
-            match a.disc.cmp(&b.disc) {
-                std::cmp::Ordering::Equal => (),
-                c => return c
-            }
-            return a.track.cmp(&b.track);
-        });
-
-        let tracks = songs.iter().map(|song| song.id.clone()).collect();
-        for song in songs {
-            match self.songs.insert(song.id.clone(), song) {
-                Some(ref dup) => { println!("Duplicate ID {}", dup.id); },
-                _ => ()
-            }
-        }
-
-        let album_artist = match doc.get("album-artist") {
-            Some(&toml::Value::String(ref t)) => t.clone(),
-            _ => artists.iter().fold(String::new(), |prev, cur| {
-                if prev.is_empty() {
-                    return cur.clone();
-                }
-
-                if prev == *cur { return prev; }
-                return String::from("Various Artists");
-            })
-        };
-
         let album = Album {
             id: id.clone(),
             title: title,
-            album_artist: String::from(album_artist),
+            album_artist: String::new(),
             year: year,
-            tracks: tracks,
+            tracks: vec!(),
             cover: cover
         };
 
