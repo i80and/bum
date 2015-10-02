@@ -1,10 +1,21 @@
 extern crate gcc;
 extern crate pkg_config;
 
+fn get_builder() -> gcc::Config {
+    let mut builder = gcc::Config::new();
+    builder.flag("-Wall");
+    builder.flag("-Wextra");
+    builder.flag("-Werror");
+    builder.flag("-Wshadow");
+    builder.flag("-Wno-unused-parameter");
+
+    return builder;
+}
+
 fn compile_gstreamer() {
     let gst = pkg_config::find_library("gstreamer-1.0").unwrap();
 
-    let mut builder = gcc::Config::new();
+    let mut builder = get_builder();
     builder.file("src/bum-transcode/bum-transcode.c");
     builder.define("D_REENTRANT", Some("1"));
 
@@ -18,7 +29,7 @@ fn compile_gstreamer() {
 fn compile_libtagparse() {
     let taglib = pkg_config::find_library("taglib").unwrap();
 
-    let mut builder = gcc::Config::new();
+    let mut builder = get_builder();
     builder.cpp(true);
     builder.flag("-std=c++11");
     builder.file("src/tag-parser/tag-parser.cpp");

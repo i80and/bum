@@ -49,7 +49,7 @@ static gboolean remove_image(GstPad* pad,
             event = gst_event_new_tag(tags);
             break;
         case GST_EVENT_CAPS:
-            sink = gst_element_get_static_pad(parent, "src");
+            sink = gst_element_get_static_pad(GST_ELEMENT(parent), "src");
             ret = gst_pad_push_event(sink, event);
             gst_object_unref(sink);
             return ret;
