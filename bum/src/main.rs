@@ -83,8 +83,8 @@ impl json::ToJson for media::Album {
         d.insert("year".to_string(), self.year.to_json());
         d.insert("tracks".to_string(), self.tracks.to_json());
         d.insert("cover".to_string(), match self.cover {
-            Some(ref path) => path.to_str().and_then(|p| Some(String::from(p))),
-            None => None
+            media::Cover::None => false,
+            _ => true
         }.to_json());
 
         return json::Json::Object(d);
@@ -224,8 +224,35 @@ impl AlbumHandler {
 
     fn handle_cover(&self, album: &media::Album, req: &hyper::server::Request, mut res: hyper::server::Response) {
         match album.cover {
-            Some(ref path) => { web::serve_file(path.clone(), req, res); },
-            None => { *res.status_mut() = hyper::status::StatusCode::NotFound; }
+            media::Cover::FromFile(ref path) => { web::serve_file(path.clone(), req, res); },
+            media::Cover::FromTags(ref path) => {
+                let metadata = match std::fs::metadata(path) {
+                    Ok(m) => m,
+                    Err(_) => {
+                        *res.status_mut() = hyper::status::StatusCode::NotFound;
+                        return;
+                    }
+                };
+
+                if !web::should_serve_file(&metadata, req, &mut res) {
+                    *res.status_mut() = hyper::status::StatusCode::NotModified;
+                    return;
+                }
+
+                match tagparser::Image::load(path) {
+                    Ok(image) => {
+                        let mimetype = image.get_mime_type().unwrap().parse().unwrap();
+                        let data = image.as_slice();
+                        res.headers_mut().set(hyper::header::ContentLength(data.len() as u64));
+                        res.headers_mut().set(hyper::header::ContentType(mimetype));
+                        *res.status_mut() = hyper::status::StatusCode::Ok;
+                        let mut res = res.start().unwrap();
+                        res.write_all(data).unwrap();
+                    },
+                    Err(_) => *res.status_mut() = hyper::status::StatusCode::NotFound
+                }
+            },
+            _ => { *res.status_mut() = hyper::status::StatusCode::NotFound; }
         }
     }
 }

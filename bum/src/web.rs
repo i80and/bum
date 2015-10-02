@@ -118,10 +118,29 @@ pub struct StaticHandler {
     root: std::sync::Arc<std::path::PathBuf>
 }
 
+pub fn should_serve_file(metadata: &std::fs::Metadata,
+                     req: &hyper::server::Request,
+                     res: &mut hyper::server::Response) -> bool {
+    // Check the If-Modified-Since against our mtime
+    let mtime = time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
+    let mut should_send = true;
+    match req.headers.get::<hyper::header::IfModifiedSince>() {
+        Some(&hyper::header::IfModifiedSince(hyper::header::HttpDate(query))) => {
+            should_send = query < mtime;
+        },
+        _ => ()
+    }
+
+    res.headers_mut().set(hyper::header::LastModified(hyper::header::HttpDate(mtime)));
+
+    return should_send;
+}
+
 pub fn serve_file(mut path: std::path::PathBuf,
                       req: &hyper::server::Request,
                   mut res: hyper::server::Response) {
-    if std::fs::metadata(&path).unwrap().is_dir() {
+    let metadata = std::fs::metadata(&path).unwrap();
+    if metadata.is_dir() {
         path.push("index.html");
         return serve_file(path, req, res);
     }
@@ -140,7 +159,6 @@ pub fn serve_file(mut path: std::path::PathBuf,
         }
     };
 
-    let metadata = file.metadata().unwrap();
     res.headers_mut().set(hyper::header::ContentLength(metadata.len()));
 
     // Get MIME type
@@ -181,17 +199,7 @@ pub fn serve_file(mut path: std::path::PathBuf,
     }
     res.headers_mut().set(hyper::header::ContentType(mimetype));
 
-    // Check the If-Modified-Since against our mtime
-    let mtime = time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
-    let mut should_send = true;
-    match req.headers.get::<hyper::header::IfModifiedSince>() {
-        Some(&hyper::header::IfModifiedSince(hyper::header::HttpDate(query))) => {
-            should_send = query < mtime;
-        },
-        _ => ()
-    }
-
-    if !should_send {
+    if !should_serve_file(&metadata, req, &mut res) {
         *res.status_mut() = hyper::status::StatusCode::NotModified;
         return;
     }
@@ -200,7 +208,6 @@ pub fn serve_file(mut path: std::path::PathBuf,
     let mut buf = [0; 1024];
 
     *res.status_mut() = hyper::status::StatusCode::Ok;
-    res.headers_mut().set(hyper::header::LastModified(hyper::header::HttpDate(mtime)));
     let mut res = res.start().unwrap();
 
     loop {

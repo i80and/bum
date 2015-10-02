@@ -28,22 +28,22 @@ export class Album {
     albumArtist: string
     year: string
     tracks: SongID[]
-    private coverPath: string
+    private haveCover: boolean
     private cover: Blob
 
-    constructor(id: AlbumID, title: string, albumArtist: string, year: string, tracks: SongID[], cover: string) {
+    constructor(id: AlbumID, title: string, albumArtist: string, year: string, tracks: SongID[], haveCover: boolean) {
         this.id = id
         this.title = title
         this.albumArtist = albumArtist
         this.year = year
         this.tracks = tracks
 
-        this.coverPath = cover
+        this.haveCover = haveCover
         this.cover = null
     }
 
     getCover(library: MediaLibrary) {
-        if(!this.coverPath) {
+        if(!this.haveCover) {
             return new Promise((resolve, reject) => { resolve(null) })
         }
 
@@ -74,7 +74,7 @@ export class Album {
         return 0
     }
 
-    static parse(data: {id: string, title: string, album_artist: string, year: string, tracks: SongID[], cover: string}) {
+    static parse(data: {id: string, title: string, album_artist: string, year: string, tracks: SongID[], cover: boolean}) {
         return new Album(data.id, data.title, data.album_artist, data.year, data.tracks, data.cover)
     }
 }

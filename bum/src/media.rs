@@ -17,7 +17,6 @@ pub type AlbumID = String;
 // Identified by AlbumID-TrackNo
 pub type SongID = String;
 
-#[derive(Debug)]
 pub struct Song {
     pub id: SongID,
     pub title: String,
@@ -30,16 +29,21 @@ pub struct Song {
 }
 
 #[derive(Debug)]
+pub enum Cover {
+    FromFile(std::path::PathBuf),
+    FromTags(std::path::PathBuf),
+    None
+}
+
 pub struct Album {
     pub id: AlbumID,
     pub title: String,
     pub album_artist: String,
     pub year: Option<u32>,
     pub tracks: Vec<SongID>,
-    pub cover: Option<std::path::PathBuf>
+    pub cover: Cover
 }
 
-#[derive(Debug)]
 pub struct MediaDatabase {
     root: std::path::PathBuf,
 
@@ -232,13 +236,25 @@ impl MediaDatabase {
             };
         }).next();
 
+        let cover = match cover_path {
+            Some(p) => Cover::FromFile(p),
+            None => {
+                // if(tracks.is_empty()) { Cover::None }
+                let song = self.get_song(tracks.get(0).unwrap()).unwrap();
+                match tagparser::Image::load(&song.path) {
+                    Ok(i) => Cover::FromTags(song.path.clone()),
+                    Err(_) => Cover::None
+                }
+            }
+        };
+
         let album = Album {
             id: album_id,
             title: title,
             album_artist: album_artist,
             year: year,
             tracks: tracks,
-            cover: cover_path
+            cover: cover
         };
 
         self.albums.insert(album.id.clone(), album);

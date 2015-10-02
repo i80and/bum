@@ -1,7 +1,16 @@
 extern crate libc;
-use libc::{size_t, c_char};
+use libc::{size_t, c_char, c_int};
 use std;
 use std::ffi::{CString, CStr};
+
+fn convert_c_string(c_str: *const c_char) -> Result<String, std::str::Utf8Error> {
+    if c_str.is_null() { return Ok(String::new()) }
+    else {
+        let bytes = unsafe { CStr::from_ptr(c_str) };
+        let str = String::from(try!(std::str::from_utf8(bytes.to_bytes())));
+        return Ok(str);
+    }
+}
 
 #[repr(C)]
 struct Field {
@@ -15,21 +24,62 @@ struct Properties {
     fields: *mut Field
 }
 
-extern "C" {
-    fn taglib_open(path: *const c_char) -> *mut Properties;
-    fn taglib_free(properties: *mut Properties);
+#[repr(C)]
+struct RawImage {
+    mime_type: *const c_char,
+    data: *const u8,
+    len: size_t
 }
 
-fn convert_c_string(c_str: *const c_char) -> Result<String, std::str::Utf8Error> {
-    if c_str.is_null() { return Ok(String::new()) }
-    else {
-        let bytes = unsafe { CStr::from_ptr(c_str) };
-        let str = String::from(try!(std::str::from_utf8(bytes.to_bytes())));
-        return Ok(str);
+pub struct Image(RawImage);
+
+impl Image {
+    fn new(inner: RawImage) -> Image {
+        return Image(inner);
+    }
+
+    pub fn load(path: &std::path::Path) -> Result<Image, ()> {
+        let path_str = CString::new(path.to_str().unwrap()).unwrap();
+        let mut image = RawImage {
+            mime_type: std::ptr::null(),
+            data: std::ptr::null(),
+            len: 0
+        };
+
+        unsafe {
+            return match taglib_get_cover(path_str.as_ptr(), &mut image) {
+                0 => Ok(Image::new(image)),
+                _ => Err(())
+            };
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        let &Image(ref raw) = self;
+        return unsafe { std::slice::from_raw_parts(raw.data, raw.len as usize) }
+    }
+
+    pub fn get_mime_type(&self) -> Result<String, std::str::Utf8Error> {
+        let &Image(ref raw) = self;
+        return convert_c_string(raw.mime_type);
     }
 }
 
-#[derive(Debug)]
+impl Drop for Image {
+    fn drop(&mut self) {
+        let &mut Image(ref mut raw) = self;
+        unsafe { taglib_image_free(raw); }
+    }
+}
+
+
+extern "C" {
+    fn taglib_open(path: *const c_char) -> *mut Properties;
+    fn taglib_get_cover(path: *const c_char, out: *mut RawImage) -> c_int;
+    fn taglib_image_free(image: *mut RawImage);
+    fn taglib_free(properties: *mut Properties);
+}
+
 pub struct Tags {
     tags: std::collections::HashMap<String, String>
 }
