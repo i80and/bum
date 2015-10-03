@@ -236,17 +236,23 @@ impl MediaDatabase {
             };
         }).next();
 
+
+
         let cover = match cover_path {
-            Some(p) => Cover::FromFile(p),
-            None => {
-                // if(tracks.is_empty()) { Cover::None }
-                let song = self.get_song(tracks.get(0).unwrap()).unwrap();
-                match tagparser::Image::load(&song.path) {
-                    Ok(i) => Cover::FromTags(song.path.clone()),
-                    Err(_) => Cover::None
-                }
+            Some(p) => Some(Cover::FromFile(p)),
+            None => None
+        }.or_else(|| {
+            let track = match tracks.get(0) {
+                Some(t) => t,
+                None => return None
+            };
+
+            let song = self.get_song(track).unwrap();
+            return match tagparser::Image::load(&song.path) {
+                Ok(i) => Some(Cover::FromTags(song.path.clone())),
+                Err(_) => None
             }
-        };
+        }).unwrap_or(Cover::None);
 
         let album = Album {
             id: album_id,
