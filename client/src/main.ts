@@ -72,6 +72,7 @@ class Player {
         this.playing = null
         if(this.playlist.length === 0) {
             this.onplay()
+            this.element.pause()
             return
         }
 
