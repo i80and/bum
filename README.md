@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/i80and/bum.svg?branch=master)](https://travis-ci.org/i80and/bum)
+
 Bum Media Server
 ================
 
