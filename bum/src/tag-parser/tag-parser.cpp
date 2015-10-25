@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <fileref.h>
 #include <tag.h>
 #include <tpropertymap.h>
