@@ -1,0 +1,35 @@
+language: rust
+sudo: required
+dist: trusty
+
+matrix:
+    include:
+        - rust: 1.3.0
+        - rust: stable
+        - rust: beta
+        - rust: nightly
+    allow_failures:
+        - rust: nightly
+
+before_script:
+- |
+  pip install 'travis-cargo<0.2' --user &&
+  export PATH=$HOME/.local/bin:$PATH
+
+script:
+- |
+  cd bum &&
+  travis-cargo build &&
+  travis-cargo test
+
+addons:
+    apt:
+        packages:
+            - libtag1-dev
+            - libgstreamer1.0-dev
+            - libcurl4-openssl-dev
+            - libelf-dev
+            - libdw-dev
+
+notifications:
+    email: false
