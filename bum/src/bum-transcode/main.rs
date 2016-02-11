@@ -4,12 +4,13 @@ use libc::c_int;
 use std::os::unix::io::AsRawFd;
 
 extern {
+    fn transcode_video(infd: c_int, quality: c_int) -> c_int;
     fn transcode_music(infd: c_int, quality: c_int) -> c_int;
     fn transcode_init();
 }
 
 fn usage(code: i32) -> ! {
-    println!("bum-transcode [quality: 0-2] [path]");
+    println!("bum-transcode [quality: 0-3] [path]");
     std::process::exit(code);
 }
 
@@ -19,6 +20,15 @@ fn main() {
     let quality = args.get(1).unwrap_or_else(|| { usage(1); })
                       .parse::<c_int>().unwrap_or_else(|_| { usage(1); });
     let path = std::path::PathBuf::from(args.get(2).unwrap_or_else(|| usage(1)));
+    let transcoder = match path.extension() {
+        Some(ext) => {
+            match &*(ext.to_string_lossy()) {
+                "mp4" | "webm" | "ogg" | "ogv" | "wmv" | "mkv" => transcode_video,
+                _ => transcode_music,
+            }
+        },
+        _ => transcode_music
+    };
     let file = match std::fs::File::open(&path) {
         Ok(f) => f,
         Err(err) => panic!("Failed to open {}: {}", path.to_string_lossy(), err)
@@ -28,7 +38,7 @@ fn main() {
 
     unsafe {
         transcode_init();
-        let result = transcode_music(fd, quality);
+        let result = transcoder(fd, quality);
 
         match result {
             i if i == 0 => (),
