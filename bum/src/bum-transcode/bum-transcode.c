@@ -34,7 +34,7 @@ const char* MUSIC_PIPELINE = \
 
 const char* VIDEO_RT_PIPELINE = \
     "fdsrc name=src ! decodebin name=decode " \
-    "mp4mux faststart=true name=mux ! fdsink name=sink " \
+    "mp4mux name=mux ! fdsink name=sink " \
     "decode. ! queue ! videoconvert ! x264enc name=video-enc ! queue ! mux. " \
     "decode. ! queue ! audioconvert ! lamemp3enc name=audio-enc quality=6 ! queue ! mux. ";
 
@@ -275,7 +275,7 @@ int transcode_video(int infd, int quality) {
 
     // Configure the pipeline options
     g_object_set(G_OBJECT(src), "fd", infd, NULL);
-    g_object_set(G_OBJECT(sink), "fd", 1, NULL);
+    g_object_set(G_OBJECT(sink), "fd", STDOUT_FILENO, NULL);
     data.set_quality(&data, quality);
 
     // Create the GLib main loop
