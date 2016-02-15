@@ -30,13 +30,13 @@ struct Image {
 static int taglib_get_cover_id3v2(TagLib::MPEG::File* file, Image* out);
 
 Properties* taglib_open(const char* path) {
-    Properties* properties = reinterpret_cast<Properties*>(malloc(sizeof(Properties)));
     TagLib::FileRef f(path);
     if(f.isNull() || !f.tag()) { return nullptr; }
 
     TagLib::PropertyMap tags = f.file()->properties();
     const unsigned int size = tags.size();
 
+    Properties* properties = reinterpret_cast<Properties*>(calloc(1, sizeof(Properties)));
     properties->n_fields = size;
     properties->fields = reinterpret_cast<Field*>(calloc(size, sizeof(Field)));
 
