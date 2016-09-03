@@ -184,7 +184,7 @@ impl MediaDatabase {
         };
 
         let title = match songs.get(0) {
-            Some(song) => String::from(song.album_title.as_ref()),
+            Some(song) => song.album_title.to_owned(),
             None => String::new()
         };
 
