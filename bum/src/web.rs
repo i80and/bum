@@ -5,8 +5,8 @@ use hyper;
 use url;
 use time;
 use util;
+use serde_json;
 
-use rustc_serialize::json;
 use std::io::{Read,Write};
 use std::os::unix::fs::MetadataExt;
 use hyper::mime;
@@ -15,11 +15,11 @@ pub use hyper::method::Method;
 
 pub struct Args<'a> {
     args: &'a regex::Captures<'a>,
-    query: &'a json::Json
+    query: &'a serde_json::Value
 }
 
 impl<'a> Args<'a> {
-    pub fn new(args: &'a regex::Captures, query: &'a json::Json) -> Args<'a> {
+    pub fn new(args: &'a regex::Captures, query: &'a serde_json::Value) -> Args<'a> {
         return Args {
             args: args,
             query: query
@@ -36,7 +36,7 @@ impl<'a> Args<'a> {
             None => return None
         };
 
-        return val.as_string();
+        return val.as_str();
     }
 
     pub fn param_i64(&self, name: &str) -> Option<i64> {
@@ -45,7 +45,7 @@ impl<'a> Args<'a> {
             None => return None
         };
 
-        let val = match val.as_string() {
+        let val = match val.as_str() {
             Some(v) => v,
             None => return None
         };
@@ -86,12 +86,12 @@ impl Router {
         };
 
         // Parse into components, and urldecode
-        let (path, query, _) = url::parse_path(path).unwrap();
-        let path = String::from("/") + &path.join("/");
-        let path = url::percent_encoding::lossy_utf8_percent_decode(path.as_bytes());
-        let query = match query {
+        let url = hyper::Url::parse(path).unwrap();
+        let path = String::from("/") + url.path();
+        let path = url::percent_encoding::percent_decode(path.as_bytes()).decode_utf8_lossy();
+        let query = match url.query() {
             Some(q) => q,
-            None => String::new()
+            None => ""
         };
 
         // Create our string to match against route handlers

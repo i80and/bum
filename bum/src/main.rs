@@ -7,22 +7,22 @@ extern crate hyper;
 extern crate libc;
 extern crate queryst;
 extern crate regex;
-extern crate rustc_serialize;
+extern crate serde_json;
 extern crate time;
 extern crate toml;
 extern crate url;
 
-use rustc_serialize::json;
-use rustc_serialize::json::ToJson;
+use serde_json::value::ToJson;
+use serde_json::value::Value;
 use std::io::Write;
 use std::io::Read;
 use hyper::mime;
 
-mod web;
-mod util;
 mod media;
-mod transcode;
 mod tagparser;
+mod transcode;
+mod util;
+mod web;
 
 struct SongListEntry<'a> {
     id: &'a str,
@@ -38,44 +38,44 @@ struct AlbumListEntry<'a> {
     year: u32
 }
 
-impl<'a> json::ToJson for SongListEntry<'a> {
-    fn to_json(&self) -> json::Json {
+impl<'a> ToJson for SongListEntry<'a> {
+    fn to_json(&self) -> Value {
         let mut d = std::collections::BTreeMap::new();
         d.insert("id".to_string(), self.id.to_json());
         d.insert("title".to_string(), self.title.to_json());
         d.insert("artist".to_string(), self.artist.to_json());
         d.insert("album".to_string(), self.album_id.to_json());
 
-        return json::Json::Object(d);
+        return Value::Object(d);
     }
 }
 
-impl<'a> json::ToJson for AlbumListEntry<'a> {
-    fn to_json(&self) -> json::Json {
+impl<'a> ToJson for AlbumListEntry<'a> {
+    fn to_json(&self) -> Value {
         let mut d = std::collections::BTreeMap::new();
         d.insert("id".to_string(), self.id.to_json());
         d.insert("title".to_string(), self.title.to_json());
         d.insert("album_artist".to_string(), self.album_artist.to_json());
         d.insert("year".to_string(), self.year.to_json());
 
-        return json::Json::Object(d);
+        return Value::Object(d);
     }
 }
 
-impl<'a> json::ToJson for media::Song {
-    fn to_json(&self) -> json::Json {
+impl<'a> ToJson for media::Song {
+    fn to_json(&self) -> Value {
         let mut d = std::collections::BTreeMap::new();
         d.insert("id".to_string(), self.id.to_json());
         d.insert("title".to_string(), self.title.to_json());
         d.insert("artist".to_string(), self.artist.to_json());
 
-        return json::Json::Object(d);
+        return Value::Object(d);
     }
 }
 
 
-impl json::ToJson for media::Album {
-    fn to_json(&self) -> json::Json {
+impl ToJson for media::Album {
+    fn to_json(&self) -> Value {
         let mut d = std::collections::BTreeMap::new();
         d.insert("id".to_string(), self.id.to_json());
         d.insert("title".to_string(), self.title.to_json());
@@ -87,7 +87,7 @@ impl json::ToJson for media::Album {
             _ => true
         }.to_json());
 
-        return json::Json::Object(d);
+        return Value::Object(d);
     }
 }
 
@@ -106,7 +106,7 @@ impl SongHandler {
         res.headers_mut().set(hyper::header::ContentType::json());
         *res.status_mut() = hyper::status::StatusCode::Ok;
 
-        res.send(json::encode(&song.to_json()).unwrap().as_bytes()).unwrap();
+        res.send(serde_json::to_string(&song.to_json()).unwrap().as_bytes()).unwrap();
     }
 
     fn handle_stream(&self, song: &media::Song, quality: transcode::Quality, mut res: hyper::server::Response) {
@@ -201,7 +201,7 @@ impl web::Handler for SongListHandler {
 
         *res.status_mut() = hyper::status::StatusCode::Ok;
         res.headers_mut().set(hyper::header::ContentType::json());
-        res.send(json::encode(&songs).unwrap().as_bytes()).unwrap();
+        res.send(serde_json::to_string(&songs).unwrap().as_bytes()).unwrap();
     }
 }
 
@@ -219,7 +219,7 @@ impl AlbumHandler {
     fn handle_metadata(&self, album: &media::Album, mut res: hyper::server::Response) {
         *res.status_mut() = hyper::status::StatusCode::Ok;
         res.headers_mut().set(hyper::header::ContentType::json());
-        res.send(json::encode(&album.to_json()).unwrap().as_bytes()).unwrap();
+        res.send(serde_json::to_string(&album.to_json()).unwrap().as_bytes()).unwrap();
     }
 
     fn handle_cover(&self, album: &media::Album, req: &hyper::server::Request, mut res: hyper::server::Response) {
@@ -306,7 +306,7 @@ impl web::Handler for AlbumListHandler {
 
         *res.status_mut() = hyper::status::StatusCode::Ok;
         res.headers_mut().set(hyper::header::ContentType::json());
-        res.send(json::encode(&albums).unwrap().as_bytes()).unwrap();
+        res.send(serde_json::to_string(&albums).unwrap().as_bytes()).unwrap();
     }
 }
 
