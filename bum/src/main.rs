@@ -320,11 +320,11 @@ fn main() {
                                -l --listen=[HOST] 'Set the host to listen on [default: 127.0.0.1:8080]'")
                           .get_matches();
 
-    let media_path = match matches.value_of("PATH") {
+    let media_path = match matches.value_of("media") {
         Some(p) => std::path::PathBuf::from(p),
         None => std::env::current_dir().unwrap()
     };
-    let host = matches.value_of("HOST").unwrap_or("127.0.0.1:8080");
+    let host = matches.value_of("listen").unwrap_or("127.0.0.1:8080");
 
     let db = std::sync::Arc::new(media::MediaDatabase::load(&media_path).unwrap());
 
