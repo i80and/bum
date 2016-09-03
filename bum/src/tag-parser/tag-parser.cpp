@@ -32,7 +32,7 @@ static int taglib_get_cover_id3v2(TagLib::MPEG::File* file, Image* out);
 
 Properties* taglib_open(const char* path) {
     TagLib::FileRef f(path);
-    if(f.isNull() || !f.tag()) { return nullptr; }
+    if(f.isNull() || !f.tag()) { return NULL; }
 
     TagLib::PropertyMap tags = f.file()->properties();
     const unsigned int size = tags.size();
@@ -65,7 +65,7 @@ int taglib_get_cover(const char* path, Image* out) {
     }
 
     TagLib::MPEG::File* file = dynamic_cast<TagLib::MPEG::File*>(wrapper_file.file());
-    if(file != nullptr && file->hasID3v2Tag()) {
+    if(file != NULL && file->hasID3v2Tag()) {
         return taglib_get_cover_id3v2(file, out);
     }
 
