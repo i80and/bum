@@ -259,9 +259,6 @@ impl hyper::server::Handler for Router {
         // that early panics result in a 500.
         *res.status_mut() = hyper::status::StatusCode::InternalServerError;
 
-        // hyper and Keep Alive do not play nicely. Track hyper issue #368
-        res.headers_mut().set(hyper::header::Connection::close());
-
         self.route_http(&req, res);
     }
 }
