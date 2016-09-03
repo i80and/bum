@@ -20,11 +20,12 @@ struct Properties {
 };
 
 struct Image {
-    Image(const Image&) = delete;
-
     char* mimeType;
     char* data;
     size_t len;
+
+private:
+    Image(const Image&);
 };
 
 static int taglib_get_cover_id3v2(TagLib::MPEG::File* file, Image* out);

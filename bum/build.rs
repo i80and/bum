@@ -31,7 +31,7 @@ fn compile_libtagparse() {
 
     let mut builder = get_builder();
     builder.cpp(true);
-    builder.flag("-std=c++11");
+    builder.flag("-std=c++98");
     builder.file("src/tag-parser/tag-parser.cpp");
 
     for include in taglib.include_paths {
