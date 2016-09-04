@@ -442,7 +442,7 @@ var MediaLibrary = (function () {
                 _this2.albums = Array.from(albums.keys());
                 _this2.songCache = songCache;
             })['catch'](function (err) {
-                console.error(err);
+                console.error('Invalid response from server', err);
             });
         }
     }, {

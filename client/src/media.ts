@@ -140,7 +140,7 @@ export class MediaLibrary {
             this.albums = Array.from(albums.keys())
             this.songCache = songCache
         }).catch((err) => {
-            console.error(err)
+            console.error('Invalid response from server', err)
         })
     }
 
