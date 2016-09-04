@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,user-scalable=no,initial-scale=1">
+
+    <title>Bum</title>
+
+    <link rel="stylesheet" href="style/main.css">
+    <link rel="stylesheet" href="style/fonts/font-awesome.min.css">
+
+    <script defer src="app.js"></script>
+</head>
+
+<body>
+    <div id="root-container">
+        <button id="albums-button" class="fa fa-th" title="List albums"></button>
+        <audio id="player"></audio>
+        <div class="button-group">
+            <button id="play-button" class="fa fa-play" title="Play/Pause"></button>
+            <button id="skip-button" class="fa fa-step-forward" title="Skip song"></button>
+        </div>
+        <div id="caption"></div>
+        <img class="cover" alt="Cover art">
+        <img class="cover old" alt="Previous cover art">
+        <div id="album-list"></div>
+    </div>
+</body>
+
+</html>
