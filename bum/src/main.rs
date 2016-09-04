@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-#![allow(unused_variables)]
 #[macro_use]
 
 extern crate clap;
@@ -142,7 +141,7 @@ impl SongHandler {
 }
 
 impl web::Handler for SongHandler {
-    fn handle(&self, req: &hyper::server::Request, mut res: hyper::server::Response, args: &web::Args) {
+    fn handle(&self, _: &hyper::server::Request, mut res: hyper::server::Response, args: &web::Args) {
         let id = args.at(1).unwrap();
         let component = args.at(2).unwrap();
 
@@ -182,7 +181,7 @@ impl SongListHandler {
 }
 
 impl web::Handler for SongListHandler {
-    fn handle(&self, req: &hyper::server::Request, mut res: hyper::server::Response, args: &web::Args) {
+    fn handle(&self, _: &hyper::server::Request, mut res: hyper::server::Response, _: &web::Args) {
         let mut songs = Vec::new();
         for song in self.db.songs() {
             let album = match self.db.get_album_by_song(&song.id) {
@@ -292,7 +291,7 @@ impl AlbumListHandler {
 }
 
 impl web::Handler for AlbumListHandler {
-    fn handle(&self, req: &hyper::server::Request, mut res: hyper::server::Response, args: &web::Args) {
+    fn handle(&self, _: &hyper::server::Request, mut res: hyper::server::Response, _: &web::Args) {
         let mut albums = Vec::new();
         for album in self.db.albums() {
             let entry = AlbumListEntry {

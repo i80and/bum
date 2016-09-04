@@ -67,7 +67,7 @@ impl MediaDatabase {
         for entry in WalkDir::new(root) {
             let entry = match entry {
                 Ok(e) => e,
-                Err(err) => continue
+                Err(_) => continue
             };
 
             let path = entry.path();
@@ -254,7 +254,7 @@ impl MediaDatabase {
 
             let song = self.get_song(track).unwrap();
             return match tagparser::Image::load(&song.path) {
-                Ok(i) => Some(Cover::FromTags(song.path.clone())),
+                Ok(_) => Some(Cover::FromTags(song.path.clone())),
                 Err(_) => None
             }
         }).unwrap_or(Cover::None);
