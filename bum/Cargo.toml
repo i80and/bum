@@ -22,6 +22,7 @@ url = "1.2"
 hyper = "0.9"
 time = "0.1"
 clap = "2.11"
+walkdir = "0.1"
 
 [build-dependencies]
 gcc = "0.3"

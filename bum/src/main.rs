@@ -11,6 +11,7 @@ extern crate serde_json;
 extern crate time;
 extern crate toml;
 extern crate url;
+extern crate walkdir;
 
 use serde_json::value::ToJson;
 use serde_json::value::Value;

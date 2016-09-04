@@ -1,6 +1,6 @@
 use std;
 use std::hash::{Hash,Hasher};
-use util;
+use walkdir::WalkDir;
 use tagparser;
 
 const COVER_FILES: [&'static str; 2] = ["cover.jpg", "cover.png"];
@@ -64,11 +64,16 @@ impl MediaDatabase {
 
         let mut song_prefixes = std::collections::HashMap::new();
 
-        util::visit_dirs(root, &mut |dirname, entry| {
+        for entry in WalkDir::new(root) {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(err) => continue
+            };
+
             let path = entry.path();
             let extension = match path.extension() {
                 Some(ext) => ext,
-                None => return
+                None => continue
             };
 
             if MUSIC_EXTENSIONS.iter().find(|e| **e == extension).is_some() {
@@ -76,7 +81,7 @@ impl MediaDatabase {
                 let mut songs = song_prefixes.entry(album_prefix).or_insert(vec!());
                 songs.push(std::path::PathBuf::from(&path));
             }
-        }).unwrap();
+        }
 
         // Associate songs with albums
         for (prefix,song_paths) in song_prefixes.iter() {
