@@ -85,7 +85,7 @@ impl Router {
         };
 
         // Parse into components, and urldecode
-        let url = hyper::Url::parse(path).unwrap();
+        let url = hyper::Url::parse("http://example.com").unwrap().join(path).unwrap();
         let path = String::from("/") + url.path();
         let path = url::percent_encoding::percent_decode(path.as_bytes()).decode_utf8_lossy();
         let query = match url.query() {
