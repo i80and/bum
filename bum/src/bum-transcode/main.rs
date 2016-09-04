@@ -1,8 +1,5 @@
 extern crate libc;
 
-#[macro_use] extern crate pledge;
-use pledge::{pledge, Promise};
-
 use libc::c_int;
 use std::os::unix::io::AsRawFd;
 
@@ -18,11 +15,6 @@ fn usage(code: i32) -> ! {
 }
 
 fn main() {
-    match pledge![Stdio, RPath] {
-        Ok(_) | Err(pledge::Error::UnsupportedPlatform) => (),
-        _ => panic!("Failed to pledge daemon")
-    }
-
     let args: Vec<String> = std::env::args().collect();
 
     let quality = args.get(1)
