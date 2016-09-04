@@ -4,8 +4,9 @@ use std;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::ffi::OsStringExt;
 
-extern {
-    pub fn realpath(pathname: *const libc::c_char, resolved: *mut libc::c_char)
+extern "C" {
+    pub fn realpath(pathname: *const libc::c_char,
+                    resolved: *mut libc::c_char)
                     -> *mut libc::c_char;
 }
 
@@ -16,7 +17,7 @@ pub fn canonicalize(raw_path: &std::path::Path) -> std::io::Result<std::path::Pa
     unsafe {
         let r = realpath(path.as_ptr(), std::ptr::null_mut());
         if r.is_null() {
-            return Err(std::io::Error::last_os_error())
+            return Err(std::io::Error::last_os_error());
         }
         buf = std::ffi::CStr::from_ptr(r).to_bytes().to_vec();
         libc::free(r as *mut _);

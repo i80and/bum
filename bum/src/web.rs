@@ -7,7 +7,7 @@ use time;
 use util;
 use serde_json;
 
-use std::io::{Read,Write};
+use std::io::{Read, Write};
 use std::os::unix::fs::MetadataExt;
 use hyper::mime;
 
@@ -15,14 +15,14 @@ pub use hyper::method::Method;
 
 pub struct Args<'a> {
     args: &'a regex::Captures<'a>,
-    query: &'a serde_json::Value
+    query: &'a serde_json::Value,
 }
 
 impl<'a> Args<'a> {
     pub fn new(args: &'a regex::Captures, query: &'a serde_json::Value) -> Args<'a> {
         return Args {
             args: args,
-            query: query
+            query: query,
         };
     }
 
@@ -33,7 +33,7 @@ impl<'a> Args<'a> {
     pub fn param(&self, name: &str) -> Option<&'a str> {
         let val = match self.query.search(name) {
             Some(v) => v,
-            None => return None
+            None => return None,
         };
 
         return val.as_str();
@@ -42,39 +42,38 @@ impl<'a> Args<'a> {
     pub fn param_i64(&self, name: &str) -> Option<i64> {
         let val = match self.query.search(name) {
             Some(v) => v,
-            None => return None
+            None => return None,
         };
 
         let val = match val.as_str() {
             Some(v) => v,
-            None => return None
+            None => return None,
         };
 
         return match val.parse::<i64>() {
             Ok(v) => Some(v),
-            Err(_) => None
+            Err(_) => None,
         };
     }
 }
 
 pub trait Handler {
-    fn handle(&self, req: &hyper::server::Request,
-                     mut res: hyper::server::Response,
-                     args: &Args);
+    fn handle(&self, req: &hyper::server::Request, mut res: hyper::server::Response, args: &Args);
 }
 
 pub struct Router {
-    routes: Vec<(regex::Regex, Box<Handler+Sync+Send>)>
+    routes: Vec<(regex::Regex, Box<Handler + Sync + Send>)>,
 }
 
 impl Router {
     pub fn new() -> Router {
-        Router {
-            routes: Vec::new()
-        }
+        Router { routes: Vec::new() }
     }
 
-    pub fn add_route<T: Handler+Sync+Send+'static>(&mut self, method: Method, path: &str, handler: T) {
+    pub fn add_route<T: Handler + Sync + Send + 'static>(&mut self,
+                                                         method: Method,
+                                                         path: &str,
+                                                         handler: T) {
         let pattern = format!(r"^{} {}$", method.to_string(), path);
         self.routes.push((regex::Regex::new(&pattern).unwrap(), Box::new(handler)));
     }
@@ -82,7 +81,7 @@ impl Router {
     fn route_http(&self, req: &hyper::server::Request, mut res: hyper::server::Response) {
         let path = match req.uri {
             hyper::uri::RequestUri::AbsolutePath(ref p) => p,
-            _ => panic!("Refused request URI")
+            _ => panic!("Refused request URI"),
         };
 
         // Parse into components, and urldecode
@@ -91,7 +90,7 @@ impl Router {
         let path = url::percent_encoding::percent_decode(path.as_bytes()).decode_utf8_lossy();
         let query = match url.query() {
             Some(q) => q,
-            None => ""
+            None => "",
         };
 
         // Create our string to match against route handlers
@@ -101,7 +100,7 @@ impl Router {
         for &(ref pattern, ref handler) in &self.routes {
             let captures = match pattern.captures(&id) {
                 Some(captures) => captures,
-                None => continue
+                None => continue,
             };
 
             // Found! Parse the query string, and dispatch.
@@ -115,20 +114,21 @@ impl Router {
 }
 
 pub struct StaticHandler {
-    root: std::sync::Arc<std::path::PathBuf>
+    root: std::sync::Arc<std::path::PathBuf>,
 }
 
 pub fn should_serve_file(metadata: &std::fs::Metadata,
-                     req: &hyper::server::Request,
-                     res: &mut hyper::server::Response) -> bool {
+                         req: &hyper::server::Request,
+                         res: &mut hyper::server::Response)
+                         -> bool {
     // Check the If-Modified-Since against our mtime
     let mtime = time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
     let mut should_send = true;
     match req.headers.get::<hyper::header::IfModifiedSince>() {
         Some(&hyper::header::IfModifiedSince(hyper::header::HttpDate(query))) => {
             should_send = query < mtime;
-        },
-        _ => ()
+        }
+        _ => (),
     }
 
     res.headers_mut().set(hyper::header::LastModified(hyper::header::HttpDate(mtime)));
@@ -137,7 +137,7 @@ pub fn should_serve_file(metadata: &std::fs::Metadata,
 }
 
 pub fn serve_file(mut path: std::path::PathBuf,
-                      req: &hyper::server::Request,
+                  req: &hyper::server::Request,
                   mut res: hyper::server::Response) {
     let metadata = std::fs::metadata(&path).unwrap();
     if metadata.is_dir() {
@@ -147,14 +147,16 @@ pub fn serve_file(mut path: std::path::PathBuf,
 
     let file = match std::fs::File::open(&path) {
         Ok(m) => m,
-        Err(err) => match err.kind() {
-            std::io::ErrorKind::PermissionDenied => {
-                *res.status_mut() = hyper::status::StatusCode::Forbidden;
-                return;
-            },
-            _ => {
-                *res.status_mut() = hyper::status::StatusCode::NotFound;
-                return;
+        Err(err) => {
+            match err.kind() {
+                std::io::ErrorKind::PermissionDenied => {
+                    *res.status_mut() = hyper::status::StatusCode::Forbidden;
+                    return;
+                }
+                _ => {
+                    *res.status_mut() = hyper::status::StatusCode::NotFound;
+                    return;
+                }
             }
         }
     };
@@ -168,34 +170,22 @@ pub fn serve_file(mut path: std::path::PathBuf,
     match path.extension() {
         Some(ext) => {
             mimetype = match &*(ext.to_string_lossy()) {
-                "html" => mime::Mime(mime::TopLevel::Text,
-                                  mime::SubLevel::Html,
-                                  vec![]),
-                "json" => mime::Mime(mime::TopLevel::Application,
-                                  mime::SubLevel::Json,
-                                  vec![]),
-                "png" => mime::Mime(mime::TopLevel::Image,
-                                  mime::SubLevel::Png,
-                                  vec![]),
-                "jpg" | "jpeg" => mime::Mime(mime::TopLevel::Image,
-                                  mime::SubLevel::Jpeg,
-                                  vec![]),
-                "txt" => mime::Mime(mime::TopLevel::Text,
-                                  mime::SubLevel::Plain,
-                                  vec![]),
-                "css" => mime::Mime(mime::TopLevel::Text,
-                                  mime::SubLevel::Css,
-                                  vec![]),
-                "js" => mime::Mime(mime::TopLevel::Application,
-                                  mime::SubLevel::Javascript,
-                                  vec![]),
-                "toml" => mime::Mime(mime::TopLevel::Text,
-                                  mime::SubLevel::Plain,
-                                  vec![]),
-                _ => mimetype
+                "html" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Html, vec![]),
+                "json" => mime::Mime(mime::TopLevel::Application, mime::SubLevel::Json, vec![]),
+                "png" => mime::Mime(mime::TopLevel::Image, mime::SubLevel::Png, vec![]),
+                "jpg" | "jpeg" => mime::Mime(mime::TopLevel::Image, mime::SubLevel::Jpeg, vec![]),
+                "txt" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Plain, vec![]),
+                "css" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Css, vec![]),
+                "js" => {
+                    mime::Mime(mime::TopLevel::Application,
+                               mime::SubLevel::Javascript,
+                               vec![])
+                }
+                "toml" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Plain, vec![]),
+                _ => mimetype,
             }
-        },
-        _ => ()
+        }
+        _ => (),
     }
     res.headers_mut().set(hyper::header::ContentType(mimetype));
 
@@ -212,7 +202,9 @@ pub fn serve_file(mut path: std::path::PathBuf,
 
     loop {
         let bytes = reader.read(&mut buf).unwrap();
-        if bytes == 0 { break; }
+        if bytes == 0 {
+            break;
+        }
         res.write_all(&buf[0..bytes]).unwrap();
     }
 }
@@ -220,9 +212,7 @@ pub fn serve_file(mut path: std::path::PathBuf,
 impl StaticHandler {
     pub fn new<P: AsRef<std::path::Path>>(root: P) -> StaticHandler {
         let canonical_root = util::canonicalize(root.as_ref()).unwrap();
-        return StaticHandler {
-            root: std::sync::Arc::new(canonical_root)
-        };
+        return StaticHandler { root: std::sync::Arc::new(canonical_root) };
     }
 }
 
@@ -263,7 +253,9 @@ impl hyper::server::Handler for Router {
     }
 }
 
-pub fn listen<T: 'static+hyper::server::Handler>(address: &str, router: T) -> Result<(), hyper::error::Error> {
+pub fn listen<T: 'static + hyper::server::Handler>(address: &str,
+                                                   router: T)
+                                                   -> Result<(), hyper::error::Error> {
     let server = try!(hyper::server::Server::http(address));
     try!(server.handle(router));
     return Ok(());

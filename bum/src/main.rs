@@ -28,14 +28,14 @@ struct SongListEntry<'a> {
     id: &'a str,
     title: &'a str,
     artist: &'a str,
-    album_id: &'a str
+    album_id: &'a str,
 }
 
 struct AlbumListEntry<'a> {
     id: &'a str,
     title: &'a str,
     album_artist: &'a str,
-    year: u32
+    year: u32,
 }
 
 impl<'a> ToJson for SongListEntry<'a> {
@@ -82,24 +82,24 @@ impl ToJson for media::Album {
         d.insert("album_artist".to_string(), self.album_artist.to_json());
         d.insert("year".to_string(), self.year.to_json());
         d.insert("tracks".to_string(), self.tracks.to_json());
-        d.insert("cover".to_string(), match self.cover {
-            media::Cover::None => false,
-            _ => true
-        }.to_json());
+        d.insert("cover".to_string(),
+                 match self.cover {
+                         media::Cover::None => false,
+                         _ => true,
+                     }
+                     .to_json());
 
         return Value::Object(d);
     }
 }
 
 struct SongHandler {
-    db: std::sync::Arc<media::MediaDatabase>
+    db: std::sync::Arc<media::MediaDatabase>,
 }
 
 impl SongHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> SongHandler {
-        return SongHandler {
-            db: db.clone()
-        };
+        return SongHandler { db: db.clone() };
     }
 
     fn handle_metadata(&self, song: &media::Song, mut res: hyper::server::Response) {
@@ -109,10 +109,15 @@ impl SongHandler {
         res.send(serde_json::to_string(&song.to_json()).unwrap().as_bytes()).unwrap();
     }
 
-    fn handle_stream(&self, song: &media::Song, quality: transcode::Quality, mut res: hyper::server::Response) {
+    fn handle_stream(&self,
+                     song: &media::Song,
+                     quality: transcode::Quality,
+                     mut res: hyper::server::Response) {
         let mut transcoder = transcode::transcode(&song.path, quality).unwrap();
 
-        let mimetype = mime::Mime(mime::TopLevel::Audio, mime::SubLevel::Ext(String::from("webm")), vec![]);
+        let mimetype = mime::Mime(mime::TopLevel::Audio,
+                                  mime::SubLevel::Ext(String::from("webm")),
+                                  vec![]);
         res.headers_mut().set(hyper::header::ContentType(mimetype));
         *res.status_mut() = hyper::status::StatusCode::Ok;
         let mut res = res.start().unwrap();
@@ -122,10 +127,12 @@ impl SongHandler {
         let mut transcoder_stream = transcoder.stdout.unwrap();
         loop {
             let bytes = transcoder_stream.read(&mut buf).unwrap();
-            if bytes == 0 { break; }
+            if bytes == 0 {
+                break;
+            }
             match res.write_all(&buf[0..bytes]) {
                 Ok(_) => (),
-                Err(_) => return
+                Err(_) => return,
             }
         }
 
@@ -135,13 +142,16 @@ impl SongHandler {
         transcoder.stdout = Some(transcoder_stream);
         match transcoder.wait() {
             Ok(v) if !v.success() => println!("Transcoding failed: {}", song.id),
-            _ => ()
+            _ => (),
         }
     }
 }
 
 impl web::Handler for SongHandler {
-    fn handle(&self, _: &hyper::server::Request, mut res: hyper::server::Response, args: &web::Args) {
+    fn handle(&self,
+              _: &hyper::server::Request,
+              mut res: hyper::server::Response,
+              args: &web::Args) {
         let id = args.at(1).unwrap();
         let component = args.at(2).unwrap();
 
@@ -158,25 +168,23 @@ impl web::Handler for SongHandler {
             "stream" => {
                 let quality = match args.param_i64("quality") {
                     Some(i) => transcode::Quality::from_int(i),
-                    None => transcode::Quality::Medium
+                    None => transcode::Quality::Medium,
                 };
 
                 return self.handle_stream(song, quality, res);
-            },
-            _ => panic!("Unknown component {}", component)
+            }
+            _ => panic!("Unknown component {}", component),
         };
     }
 }
 
 struct SongListHandler {
-    db: std::sync::Arc<media::MediaDatabase>
+    db: std::sync::Arc<media::MediaDatabase>,
 }
 
 impl SongListHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> SongListHandler {
-        return SongListHandler {
-            db: db.clone()
-        };
+        return SongListHandler { db: db.clone() };
     }
 }
 
@@ -186,14 +194,14 @@ impl web::Handler for SongListHandler {
         for song in self.db.songs() {
             let album = match self.db.get_album_by_song(&song.id) {
                 Some(album) => album,
-                None => continue
+                None => continue,
             };
 
             let entry = SongListEntry {
                 id: &song.id,
                 title: &song.title,
                 artist: &song.artist,
-                album_id: &album.id
+                album_id: &album.id,
             };
 
             songs.push(entry.to_json());
@@ -206,14 +214,12 @@ impl web::Handler for SongListHandler {
 }
 
 struct AlbumHandler {
-    db: std::sync::Arc<media::MediaDatabase>
+    db: std::sync::Arc<media::MediaDatabase>,
 }
 
 impl AlbumHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> AlbumHandler {
-        return AlbumHandler {
-            db: db.clone()
-        };
+        return AlbumHandler { db: db.clone() };
     }
 
     fn handle_metadata(&self, album: &media::Album, mut res: hyper::server::Response) {
@@ -222,9 +228,14 @@ impl AlbumHandler {
         res.send(serde_json::to_string(&album.to_json()).unwrap().as_bytes()).unwrap();
     }
 
-    fn handle_cover(&self, album: &media::Album, req: &hyper::server::Request, mut res: hyper::server::Response) {
+    fn handle_cover(&self,
+                    album: &media::Album,
+                    req: &hyper::server::Request,
+                    mut res: hyper::server::Response) {
         match album.cover {
-            media::Cover::FromFile(ref path) => { web::serve_file(path.clone(), req, res); },
+            media::Cover::FromFile(ref path) => {
+                web::serve_file(path.clone(), req, res);
+            }
             media::Cover::FromTags(ref path) => {
                 let metadata = match std::fs::metadata(path) {
                     Ok(m) => m,
@@ -248,17 +259,22 @@ impl AlbumHandler {
                         *res.status_mut() = hyper::status::StatusCode::Ok;
                         let mut res = res.start().unwrap();
                         res.write_all(data).unwrap();
-                    },
-                    Err(_) => *res.status_mut() = hyper::status::StatusCode::NotFound
+                    }
+                    Err(_) => *res.status_mut() = hyper::status::StatusCode::NotFound,
                 }
-            },
-            _ => { *res.status_mut() = hyper::status::StatusCode::NotFound; }
+            }
+            _ => {
+                *res.status_mut() = hyper::status::StatusCode::NotFound;
+            }
         }
     }
 }
 
 impl web::Handler for AlbumHandler {
-    fn handle(&self, req: &hyper::server::Request, mut res: hyper::server::Response, args: &web::Args) {
+    fn handle(&self,
+              req: &hyper::server::Request,
+              mut res: hyper::server::Response,
+              args: &web::Args) {
         let id = args.at(1).unwrap();
         let component = args.at(2).unwrap();
 
@@ -273,20 +289,18 @@ impl web::Handler for AlbumHandler {
         match component {
             "metadata" => return self.handle_metadata(album, res),
             "cover" => return self.handle_cover(album, req, res),
-            _ => panic!("Unknown component {}", component)
+            _ => panic!("Unknown component {}", component),
         };
     }
 }
 
 struct AlbumListHandler {
-    db: std::sync::Arc<media::MediaDatabase>
+    db: std::sync::Arc<media::MediaDatabase>,
 }
 
 impl AlbumListHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> AlbumListHandler {
-        return AlbumListHandler {
-            db: db.clone()
-        };
+        return AlbumListHandler { db: db.clone() };
     }
 }
 
@@ -312,33 +326,44 @@ impl web::Handler for AlbumListHandler {
 
 fn main() {
     let matches = clap::App::new("bum")
-                          .version(&crate_version!()[..])
-                          .author("Andrew Aldridge <i80and@foxquill.com>")
-                          .about("Start the bum media server.")
-                          .args_from_usage(
-                              "-m --media=[PATH] 'Set the path to search for media [default: ./]'
-                               -l --listen=[HOST] 'Set the host to listen on [default: 127.0.0.1:8080]'")
-                          .get_matches();
+        .version(&crate_version!()[..])
+        .author("Andrew Aldridge <i80and@foxquill.com>")
+        .about("Start the bum media server.")
+        .args_from_usage("-m --media=[PATH] 'Set the path to search for media [default: ./]'
+                               \
+                          -l --listen=[HOST] 'Set the host to listen on [default: \
+                          127.0.0.1:8080]'")
+        .get_matches();
 
     let media_path = match matches.value_of("media") {
         Some(p) => std::path::PathBuf::from(p),
-        None => std::env::current_dir().unwrap()
+        None => std::env::current_dir().unwrap(),
     };
     let host = matches.value_of("listen").unwrap_or("127.0.0.1:8080");
 
     let db = std::sync::Arc::new(media::MediaDatabase::load(&media_path).unwrap());
 
     let mut router = web::Router::new();
-    router.add_route(web::Method::Get, r"/api/music/songs", SongListHandler::new(&db));
-    router.add_route(web::Method::Get, r"/api/music/song/([\w\\-]+)/(metadata|stream)", SongHandler::new(&db));
-    router.add_route(web::Method::Get, r"/api/music/albums", AlbumListHandler::new(&db));
-    router.add_route(web::Method::Get, r"/api/music/album/([\w\\-]+)/(metadata|cover)", AlbumHandler::new(&db));
-    router.add_route(web::Method::Get, r"/(.*)", web::StaticHandler::new("../client/build"));
+    router.add_route(web::Method::Get,
+                     r"/api/music/songs",
+                     SongListHandler::new(&db));
+    router.add_route(web::Method::Get,
+                     r"/api/music/song/([\w\\-]+)/(metadata|stream)",
+                     SongHandler::new(&db));
+    router.add_route(web::Method::Get,
+                     r"/api/music/albums",
+                     AlbumListHandler::new(&db));
+    router.add_route(web::Method::Get,
+                     r"/api/music/album/([\w\\-]+)/(metadata|cover)",
+                     AlbumHandler::new(&db));
+    router.add_route(web::Method::Get,
+                     r"/(.*)",
+                     web::StaticHandler::new("../client/build"));
 
     println!("Preparing to listen on {}", host);
     match web::listen(host, router) {
         Err(hyper::error::Error::Io(msg)) => println!("Failed to start server: {}", msg),
         Err(msg) => println!("Failed to start server: {}", msg),
-        _ => ()
+        _ => (),
     }
 }
