@@ -12,6 +12,9 @@ extern crate toml;
 extern crate url;
 extern crate walkdir;
 
+#[macro_use] extern crate pledge;
+use pledge::{pledge, Promise};
+
 use serde_json::value::ToJson;
 use serde_json::value::Value;
 use std::io::Write;
@@ -325,6 +328,11 @@ impl web::Handler for AlbumListHandler {
 }
 
 fn main() {
+    match pledge![Stdio, RPath, Inet] {
+        Ok(_) | Err(pledge::Error::UnsupportedPlatform) => (),
+        _ => panic!("Failed to pledge daemon")
+    }
+
     let matches = clap::App::new("bum")
         .version(&crate_version!()[..])
         .author("Andrew Aldridge <i80and@foxquill.com>")
