@@ -3,6 +3,7 @@ name = "bum"
 version = "0.1.0"
 authors = ["Andrew Aldridge <i80and@foxquill.com>"]
 build = "build.rs"
+publish = false
 
 [[bin]]
 name = "bum"
@@ -12,6 +13,10 @@ path = "src/main.rs"
 name = "bum-transcode"
 path = "src/bum-transcode/main.rs"
 
+[[bin]]
+name = "bum-tags"
+path = "src/tag-parser/main.rs"
+
 [dependencies]
 clap = "2.11"
 hyper = "0.9"
@@ -19,11 +24,13 @@ libc = "0.2"
 pledge = "0.1"
 queryst = "1.0"
 regex = "0.1"
+resp = "0.4"
 serde_json = "0.8"
 time = "0.1"
 toml = "0.1"
 url = "1.2"
 walkdir = "0.1"
+bum-rpc = {path = "./src/bum-rpc"}
 
 [build-dependencies]
 gcc = "0.3"

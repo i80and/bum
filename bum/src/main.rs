@@ -1,11 +1,12 @@
 #![allow(dead_code)]
-#[macro_use]
 
-extern crate clap;
+extern crate bum_rpc;
+#[macro_use] extern crate clap;
 extern crate hyper;
 extern crate libc;
 extern crate queryst;
 extern crate regex;
+extern crate resp;
 extern crate serde_json;
 extern crate time;
 extern crate toml;
@@ -253,10 +254,10 @@ impl AlbumHandler {
                     return;
                 }
 
-                match tagparser::Image::load(path) {
+                match self.db.get_tagparser().load_cover(path) {
                     Ok(image) => {
-                        let mimetype = image.get_mime_type().unwrap().parse().unwrap();
-                        let data = image.as_slice();
+                        let mimetype = image.mimetype.parse().unwrap();
+                        let data = &image.data;
                         res.headers_mut().set(hyper::header::ContentLength(data.len() as u64));
                         res.headers_mut().set(hyper::header::ContentType(mimetype));
                         *res.status_mut() = hyper::status::StatusCode::Ok;
@@ -351,7 +352,11 @@ fn main() {
     };
     let host = matches.value_of("listen").unwrap_or("127.0.0.1:8080");
 
-    let db = std::sync::Arc::new(media::MediaDatabase::load(&media_path).unwrap());
+    let (db, db_errors) = media::MediaDatabase::load(&media_path);
+    for error in db_errors {
+        println!("{}", error);
+    }
+    let db = std::sync::Arc::new(db);
 
     let mut router = web::Router::new();
     router.add_route(web::Method::Get,

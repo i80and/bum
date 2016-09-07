@@ -1,5 +1,6 @@
-use std;
 use std::hash::{Hash, Hasher};
+use std::sync::{Mutex, MutexGuard};
+use std;
 use walkdir::WalkDir;
 use tagparser;
 
@@ -52,15 +53,18 @@ pub struct MediaDatabase {
     albums: std::collections::HashMap<AlbumID, Album>,
 
     index_song_album: std::collections::HashMap<SongID, AlbumID>,
+    tagparser: Mutex<tagparser::Server>,
 }
 
 impl MediaDatabase {
-    pub fn load(root: &std::path::Path) -> Result<MediaDatabase, String> {
+    pub fn load(root: &std::path::Path) -> (MediaDatabase, Vec<String>) {
+        let mut errors = vec![];
         let mut db = MediaDatabase {
             root: std::path::PathBuf::from(root),
             songs: std::collections::BTreeMap::new(),
             albums: std::collections::HashMap::new(),
             index_song_album: std::collections::HashMap::new(),
+            tagparser: Mutex::new(tagparser::Server::start().unwrap())
         };
 
         let mut song_prefixes = std::collections::HashMap::new();
@@ -87,8 +91,15 @@ impl MediaDatabase {
         // Associate songs with albums
         for (prefix, song_paths) in song_prefixes.iter() {
             let mut songs: Vec<Song> = song_paths.iter()
-                .filter_map(|path| db.parse_song(path).ok())
-                .collect();
+                .filter_map(|path| {
+                    match db.parse_song(path) {
+                        Ok(song) => Some(song),
+                        Err(msg) => {
+                            errors.push(msg);
+                            None
+                        }
+                    }
+                }).collect();
 
             // Reverse-order so that we can pop off the end and get a sorted
             // track list.
@@ -103,7 +114,7 @@ impl MediaDatabase {
             db.insert_album(songs, prefix);
         }
 
-        return Ok(db);
+        return (db, errors);
     }
 
     pub fn get_song<'a>(&'a self, song_id: &str) -> Option<&'a Song> {
@@ -131,10 +142,16 @@ impl MediaDatabase {
         return self.albums.values();
     }
 
-    fn parse_song(&self, path: &std::path::Path) -> Result<Song, String> {
-        let tags = match tagparser::Tags::new(&path) {
+    pub fn get_tagparser(&self) -> MutexGuard<tagparser::Server> {
+        return self.tagparser.lock().unwrap();
+    }
+
+    fn parse_song(&mut self, path: &std::path::Path) -> Result<Song, String> {
+        let tags = match self.get_tagparser().load_tags(&path) {
             Ok(t) => t,
-            Err(_) => return Err(format!("Failed to parse file {:?}", path)),
+            Err(msg) => {
+                return Err(format!("Failed to parse file \"{}\": {}", path.display(), msg))
+            },
         };
 
         let title = match tags.title() {
@@ -261,9 +278,9 @@ impl MediaDatabase {
                     None => return None,
                 };
 
-                let song = self.get_song(track).unwrap();
-                return match tagparser::Image::load(&song.path) {
-                    Ok(_) => Some(Cover::FromTags(song.path.clone())),
+                let song_path = self.get_song(track).unwrap().path.clone();
+                return match self.get_tagparser().load_cover(&song_path) {
+                    Ok(_) => Some(Cover::FromTags(song_path)),
                     Err(_) => None,
                 };
             })

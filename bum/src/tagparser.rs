@@ -1,123 +1,21 @@
-extern crate libc;
-use libc::{size_t, c_char, c_int};
-use std;
-use std::ffi::{CString, CStr};
+use std::collections::HashMap;
+use std::error::Error;
+use std::io;
+use std::path::Path;
+use std::process;
+use resp;
+use bum_rpc;
 
-fn convert_c_string(c_str: *const c_char) -> Result<String, std::str::Utf8Error> {
-    if c_str.is_null() {
-        return Ok(String::new());
-    } else {
-        let bytes = unsafe { CStr::from_ptr(c_str) };
-        let str = String::from(try!(std::str::from_utf8(bytes.to_bytes())));
-        return Ok(str);
-    }
-}
-
-#[repr(C)]
-struct Field {
-    key: *const c_char,
-    value: *const c_char,
-}
-
-#[repr(C)]
-struct Properties {
-    n_fields: size_t,
-    fields: *mut Field,
-}
-
-#[repr(C)]
-struct RawImage {
-    mime_type: *const c_char,
-    data: *const u8,
-    len: size_t,
-}
-
-pub struct Image(RawImage);
-
-impl Image {
-    fn new(inner: RawImage) -> Image {
-        return Image(inner);
-    }
-
-    pub fn load(path: &std::path::Path) -> Result<Image, ()> {
-        let path_str = CString::new(path.to_str().unwrap()).unwrap();
-        let mut image = RawImage {
-            mime_type: std::ptr::null(),
-            data: std::ptr::null(),
-            len: 0,
-        };
-
-        unsafe {
-            return match taglib_get_cover(path_str.as_ptr(), &mut image) {
-                0 => Ok(Image::new(image)),
-                _ => Err(()),
-            };
-        }
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        let &Image(ref raw) = self;
-        return unsafe { std::slice::from_raw_parts(raw.data, raw.len as usize) };
-    }
-
-    pub fn get_mime_type(&self) -> Result<String, std::str::Utf8Error> {
-        let &Image(ref raw) = self;
-        return convert_c_string(raw.mime_type);
-    }
-}
-
-impl Drop for Image {
-    fn drop(&mut self) {
-        let &mut Image(ref mut raw) = self;
-        unsafe {
-            taglib_image_free(raw);
-        }
-    }
-}
-
-
-extern "C" {
-    fn taglib_open(path: *const c_char) -> *mut Properties;
-    fn taglib_get_cover(path: *const c_char, out: *mut RawImage) -> c_int;
-    fn taglib_image_free(image: *mut RawImage);
-    fn taglib_free(properties: *mut Properties);
+pub struct Image {
+    pub mimetype: String,
+    pub data: Vec<u8>,
 }
 
 pub struct Tags {
-    tags: std::collections::HashMap<String, String>,
+    tags: HashMap<String, String>,
 }
 
 impl Tags {
-    pub fn new(path: &std::path::Path) -> Result<Tags, ()> {
-        let path_str = CString::new(path.to_str().unwrap()).unwrap();
-        let mut result = std::collections::HashMap::new();
-        unsafe {
-            let properties = taglib_open(path_str.as_ptr());
-            if properties.is_null() {
-                return Err(());
-            }
-
-            for i in 0..(*properties).n_fields {
-                let field = (*properties).fields.offset(i as isize);
-                let key = match convert_c_string((*field).key) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-
-                let value = match convert_c_string((*field).value) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-
-                result.insert(key, value);
-            }
-
-            taglib_free(properties);
-        }
-
-        return Ok(Tags { tags: result });
-    }
-
     pub fn title<'a>(&'a self) -> Option<&'a str> {
         return match self.tags.get("TITLE") {
             Some(s) => Some(s),
@@ -184,5 +82,96 @@ impl Tags {
         };
 
         return (cur_disc, n_discs);
+    }
+}
+
+pub struct Server {
+    rpc: bum_rpc::RPCInterface<io::BufReader<process::ChildStdout>>,
+    child_stdin: process::ChildStdin,
+}
+
+impl Server {
+    pub fn start() -> Result<Server, String> {
+        let child = process::Command::new("./target/debug/bum-tags")
+        .stdout(process::Stdio::piped())
+        .stdin(process::Stdio::piped())
+        .spawn();
+
+        return match child {
+            Ok(c) =>  Ok(Server {
+                rpc: bum_rpc::RPCInterface::new(io::BufReader::new(c.stdout.unwrap())),
+                child_stdin: c.stdin.unwrap()
+            }),
+            Err(s) => Err(format!("Error starting tagparser helper: {}", s.description())),
+        };
+    }
+
+    pub fn load_tags(&mut self, path: &Path) -> Result<Tags, String> {
+        let path_str = match path.to_str() {
+            Some(s) => s.to_owned(),
+            None => return Err("Cannot treat path as string".to_owned())
+        };
+
+        bum_rpc::call(&mut self.child_stdin,
+                      "tags",
+                      vec![resp::Value::String(path_str)]);
+        match self.rpc.read_value() {
+            Some(resp::Value::Array(array)) => {
+                let mut hashmap = HashMap::with_capacity(array.len());
+                for element in array {
+                    let element = match bum_rpc::value_to_string(element) {
+                        Ok(s) => s,
+                        Err(_) => return Err(format!("Bad response from tagserver"))
+                    };
+
+                    let pos = match element.find(':') {
+                        Some(p) => p,
+                        None => return Err("Bad response from tagserver".to_owned())
+                    };
+                    let (k, v) = element.split_at(pos);
+                    let v = &v[1..];
+                    hashmap.insert(k.to_owned(), v.to_owned());
+                }
+
+                Ok(Tags {
+                    tags: hashmap
+                })
+            }
+            Some(resp::Value::Error(msg)) => return Err(msg),
+            None => Err(format!("No response from tagserver")),
+            _ => return Err(format!("Bad response from tagserver"))
+        }
+    }
+
+    pub fn load_cover(&mut self, path: &Path) -> Result<Image, String> {
+        let path_str = match path.to_str() {
+            Some(s) => s.to_owned(),
+            None => return Err("Cannot treat path as string".to_owned())
+        };
+
+        bum_rpc::call(&mut self.child_stdin,
+                      "cover",
+                      vec![resp::Value::String(path_str)]);
+        match self.rpc.read_value() {
+            Some(resp::Value::Array(mut array)) => {
+                let data = match array.pop() {
+                    Some(resp::Value::BufBulk(data)) => data,
+                    _ => return Err("Bad data response from tagserver".to_owned())
+                };
+
+                let mimetype = match array.pop() {
+                    Some(resp::Value::String(mimetype)) => mimetype,
+                    _ => return Err("Bad mimetype response from tagserver".to_owned())
+                };
+
+                return Ok(Image {
+                    mimetype: mimetype,
+                    data: data
+                });
+            }
+            Some(resp::Value::Error(msg)) => return Err(msg),
+            None => Err("No response from tagserver loading cover".to_owned()),
+            _ => return Err("Bad response from tagserver".to_owned())
+        }
     }
 }

@@ -1,0 +1,9 @@
+[package]
+name = "bum-rpc"
+version = "0.1.0"
+authors = ["Andrew Aldridge <i80and@foxquill.com>"]
+publish = false
+
+[dependencies]
+resp = "0.4"
+pledge = "0.1"
