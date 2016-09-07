@@ -4,7 +4,6 @@
   "author": "Andrew Aldridge <i80and@foxquill.com>",
   "private": true,
   "devDependencies": {
-    "typescript": "1.8",
     "rollup": "^0.34.13",
     "rollup-plugin-typescript": "^0.8.1"
   }
