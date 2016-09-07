@@ -5,13 +5,14 @@ SRC=./src/main.ts ./src/media.ts
 all: ./build/app.js ./build/index.html
 	rsync -ra --delete style/ build/style
 
-./build/app.js: $(SRC)
-	./node_modules/.bin/tsc --noImplicitAny --target es6 --outDir ./.obj $^
-	./node_modules/.bin/browserify -o $@ -e ./.obj/main.js -t [ babelify ]
+./build/app.js: $(SRC) Makefile node_modules
+	./node_modules/.bin/rollup -c
 
 ./build/index.html: index.html
 	cp $^ $@
 
+node_modules: package.json
+	npm install
+
 clean:
-	rm -r .obj/*
 	rm -r build/*
