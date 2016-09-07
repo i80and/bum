@@ -1,5 +1,3 @@
-/// <reference path="typings/whatwg-fetch/whatwg-fetch.d.ts" />
-
 import * as media from './media'
 
 const EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP'
@@ -205,8 +203,9 @@ function main() {
 
             for(let album of albums) {
                 const el = document.createElement('div')
+                const tracks = album.tracks
                 el.addEventListener('click', function() {
-                    const songs = album.tracks.map((id) => {
+                    const songs = tracks.map((id) => {
                         return library.getSong(id)
                     })
 

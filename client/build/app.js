@@ -1,25 +1,30 @@
 (function () {
 'use strict';
 
-// Fisher-Yates Shuffle
+function __awaiter(thisArg, _arguments, P, generator) {
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator.throw(value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments)).next());
+    });
+}
+
 function shuffle(array) {
-    var counter = array.length;
-    var temp;
-    var index;
-    // While there are elements in the array
+    let counter = array.length;
+    let temp;
+    let index;
     while (counter > 0) {
-        // Pick a random index
         index = Math.floor(Math.random() * counter);
         counter -= 1;
-        // And swap the last element with it
         temp = array[counter];
         array[counter] = array[index];
         array[index] = temp;
     }
     return array;
 }
-var Album = (function () {
-    function Album(id, title, albumArtist, year, tracks, haveCover) {
+class Album {
+    constructor(id, title, albumArtist, year, tracks, haveCover) {
         this.id = id;
         this.title = title;
         this.albumArtist = albumArtist;
@@ -28,34 +33,32 @@ var Album = (function () {
         this.haveCover = haveCover;
         this.cover = null;
     }
-    Album.prototype.getCover = function (library) {
-        var _this = this;
+    getCover(library) {
         if (!this.haveCover) {
-            return new Promise(function (resolve, reject) { resolve(null); });
+            return new Promise((resolve, reject) => { resolve(null); });
         }
         if (this.cover) {
-            return new Promise(function (resolve, reject) { resolve(_this.cover); });
+            return new Promise((resolve, reject) => { resolve(this.cover); });
         }
-        return self.fetch(library.root + "/music/album/" + this.id + "/cover").then(function (response) {
+        return self.fetch(`${library.root}/music/album/${this.id}/cover`).then((response) => {
             if (!response.ok) {
                 return null;
             }
             return response.blob();
-        }).then(function (data) {
-            _this.cover = data;
+        }).then((data) => {
+            this.cover = data;
             return data;
         });
-    };
-    Album.prototype.compare = function (other) {
-        var thisCompiler = this.albumArtist.toLowerCase().split(/^"|the\W/i).join('');
-        var otherCompiler = other.albumArtist.toLowerCase().split(/^"|the\W/i).join('');
+    }
+    compare(other) {
+        const thisCompiler = this.albumArtist.toLowerCase().split(/^"|the\W/i).join('');
+        const otherCompiler = other.albumArtist.toLowerCase().split(/^"|the\W/i).join('');
         if (thisCompiler > otherCompiler) {
             return 1;
         }
         if (thisCompiler < otherCompiler) {
             return -1;
         }
-        // Tie-break using year
         if (this.year > other.year) {
             return 1;
         }
@@ -63,130 +66,121 @@ var Album = (function () {
             return -1;
         }
         return 0;
-    };
-    Album.parse = function (data) {
+    }
+    static parse(data) {
         return new Album(data.id, data.title, data.album_artist, data.year, data.tracks, data.cover);
-    };
-    return Album;
-}());
-var Song = (function () {
-    function Song(id, title, artist) {
+    }
+}
+class Song {
+    constructor(id, title, artist) {
         this.id = id;
         this.title = title;
         this.artist = artist;
     }
-    Song.prototype.stream = function () {
-        return "/music/song/" + this.id + "/stream";
-    };
-    Song.parse = function (data) {
+    stream() {
+        return `/music/song/${this.id}/stream`;
+    }
+    static parse(data) {
         return new Song(data.id, data.title, data.artist);
-    };
-    return Song;
-}());
-var MediaLibrary = (function () {
-    function MediaLibrary(root) {
+    }
+}
+class MediaLibrary {
+    constructor(root) {
         this.root = root;
         this.songs = [];
         this.albums = [];
         this.songCache = new Map();
         this.albumCache = new Map();
-        // this.artistIndex = new Map<string, SongID[]>()
         this.albumIndex = new Map();
     }
-    MediaLibrary.prototype.refresh = function () {
-        var _this = this;
-        var songs = [];
-        var albums = new Set();
-        var songCache = new Map();
-        return self.fetch(this.root + "/music/songs").then(function (response) {
+    refresh() {
+        const songs = [];
+        const albums = new Set();
+        const songCache = new Map();
+        return self.fetch(`${this.root}/music/songs`).then((response) => {
             return response.json();
-        }).then(function (results) {
-            for (var _i = 0, results_1 = results; _i < results_1.length; _i++) {
-                var rawSong = results_1[_i];
+        }).then((results) => {
+            for (let rawSong of results) {
                 songs.push(rawSong.id);
                 albums.add(rawSong.album);
-                _this.albumIndex.set(rawSong.id, rawSong.album);
+                this.albumIndex.set(rawSong.id, rawSong.album);
                 try {
                     songCache.set(rawSong.id, Song.parse(rawSong));
                 }
                 catch (err) {
-                    console.error("Error parsing song " + rawSong.id);
+                    console.error(`Error parsing song ${rawSong.id}`);
                     console.error(err);
                 }
             }
-            _this.songs = songs;
-            _this.albums = Array.from(albums.keys());
-            _this.songCache = songCache;
-        }).catch(function (err) {
+            this.songs = songs;
+            this.albums = Array.from(albums.keys());
+            this.songCache = songCache;
+        }).catch((err) => {
             console.error('Invalid response from server', err);
         });
-    };
-    MediaLibrary.prototype.shuffle = function () {
-        var _this = this;
-        return this.refresh().then(function () {
-            shuffle(_this.songs);
-            return _this.songs;
+    }
+    shuffle() {
+        return this.refresh().then(() => {
+            shuffle(this.songs);
+            return this.songs;
         });
-    };
-    MediaLibrary.prototype.songUrl = function (song) {
+    }
+    songUrl(song) {
         return this.root + song.stream();
-    };
-    MediaLibrary.prototype.getSong = function (id) {
+    }
+    getSong(id) {
         if (this.songCache.has(id)) {
             return this.songCache.get(id);
         }
         else {
             return null;
         }
-    };
-    MediaLibrary.prototype.getAlbums = function () {
-        var _this = this;
-        var albums = [];
-        return Promise.all(this.albums.map(function (id) {
-            return _this.getAlbum(id).then(function (album) {
+    }
+    getAlbums() {
+        return __awaiter(this, void 0, Promise, function* () {
+            const albums = [];
+            const response = yield self.fetch(`${this.root}/music/albums`);
+            const data = yield response.json();
+            for (let i = 0; i < data.length; i += 1) {
+                const album = Album.parse(data[i]);
+                this.albumCache.set(album.id, album);
                 albums.push(album);
-            }).catch(function (err) {
-                console.error(err);
-            });
-        })).then(function () {
+            }
             return albums;
         });
-    };
-    MediaLibrary.prototype.getAlbum = function (id) {
-        var _this = this;
+    }
+    getAlbum(id) {
         if (this.albumCache.has(id)) {
-            return new Promise(function (resolve, reject) { resolve(_this.albumCache.get(id)); });
+            return new Promise((resolve, reject) => { resolve(this.albumCache.get(id)); });
         }
-        return self.fetch(this.root + "/music/album/" + id + "/metadata").then(function (response) {
+        return self.fetch(`${this.root}/music/album/${id}/metadata`).then((response) => {
             return response.json();
-        }).then(function (data) {
-            var album = Album.parse(data);
-            _this.albumCache.set(id, album);
+        }).then((data) => {
+            const album = Album.parse(data);
+            this.albumCache.set(id, album);
             return album;
         });
-    };
-    MediaLibrary.prototype.getAlbumBySong = function (id) {
+    }
+    getAlbumBySong(id) {
         return this.getAlbum(this.albumIndex.get(id));
-    };
-    return MediaLibrary;
-}());
+    }
+}
 
-/// <reference path="typings/whatwg-fetch/whatwg-fetch.d.ts" />
-var EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP';
-var Player = (function () {
-    function Player(library) {
+const EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP';
+class Player {
+    constructor(library) {
         this.playing = null;
         this.paused = null;
         this.library = library;
         this.playlist = [];
-        this.onplay = function () { };
+        this.onplay = () => { };
         this._initElement();
     }
-    Player.prototype.play = function (songs) {
+    play(songs) {
         this.playlist = songs.reverse();
         this.doPlay();
-    };
-    Player.prototype.togglePause = function () {
+    }
+    togglePause() {
         if (this.paused) {
             this.element.play();
             this.playing = this.paused;
@@ -198,58 +192,53 @@ var Player = (function () {
         this.paused = this.playing;
         this.playing = null;
         this.onplay();
-    };
-    Player.prototype.skip = function () {
+    }
+    skip() {
         this.doPlay();
-    };
-    Player.prototype.shuffle = function () {
-        var _this = this;
-        this.library.shuffle().then(function (ids) { return ids.map(function (id) {
-            return _this.library.getSong(id);
-        }); }).then(function (songs) {
-            _this.play(songs);
+    }
+    shuffle() {
+        this.library.shuffle().then((ids) => ids.map((id) => {
+            return this.library.getSong(id);
+        })).then((songs) => {
+            this.play(songs);
         });
-    };
-    Player.prototype.doPlay = function () {
+    }
+    doPlay() {
         this.paused = null;
         this.playing = null;
         if (this.playlist.length === 0) {
             this.onplay();
-            // Don't pause an errored stream. This can cause a nasty
-            // error loop, where pausing triggers reparsing bad input.
             if (!this.element.error) {
                 this.element.pause();
             }
             return;
         }
-        var song = this.playlist.pop();
+        const song = this.playlist.pop();
         this.playing = song;
         this.element.src = this.library.songUrl(song);
         this.element.play();
         this.onplay();
-    };
-    Player.prototype._initElement = function () {
-        var _this = this;
+    }
+    _initElement() {
         this.element = document.createElement('audio');
         this.element.controls = false;
-        this.element.onended = function () {
-            _this.doPlay();
+        this.element.onended = () => {
+            this.doPlay();
         };
-        this.element.onerror = function () {
-            var id = _this.playing ? _this.playing.id : 'unknown';
-            console.error("Error playing " + id);
-            _this.doPlay();
+        this.element.onerror = () => {
+            const id = this.playing ? this.playing.id : 'unknown';
+            console.error(`Error playing ${id}`);
+            this.doPlay();
         };
-    };
-    return Player;
-}());
-var CoverSwitcher = (function () {
-    function CoverSwitcher(elements) {
+    }
+}
+class CoverSwitcher {
+    constructor(elements) {
         this.elements = elements.slice(0, 2);
         this.curCover = null;
         this.cur = 0;
     }
-    CoverSwitcher.prototype.switch = function (data) {
+    switch(data) {
         if (data === this.curCover) {
             return;
         }
@@ -262,33 +251,28 @@ var CoverSwitcher = (function () {
             return;
         }
         this.currentElement.src = URL.createObjectURL(data);
-    };
-    Object.defineProperty(CoverSwitcher.prototype, "currentElement", {
-        get: function () {
-            return this.elements[this.cur];
-        },
-        enumerable: true,
-        configurable: true
-    });
-    return CoverSwitcher;
-}());
+    }
+    get currentElement() {
+        return this.elements[this.cur];
+    }
+}
 function main() {
-    var albumsButton = document.getElementById('albums-button');
-    var albumsList = document.getElementById('album-list');
-    var playButton = document.getElementById('play-button');
-    var skipButton = document.getElementById('skip-button');
-    var labelElement = document.getElementById('caption');
-    var coverSwitcher = new CoverSwitcher(Array.from(document.getElementsByClassName('cover')));
-    var library = new MediaLibrary('/api');
-    var player = new Player(library);
+    const albumsButton = document.getElementById('albums-button');
+    const albumsList = document.getElementById('album-list');
+    const playButton = document.getElementById('play-button');
+    const skipButton = document.getElementById('skip-button');
+    const labelElement = document.getElementById('caption');
+    const coverSwitcher = new CoverSwitcher(Array.from(document.getElementsByClassName('cover')));
+    const library = new MediaLibrary('/api');
+    const player = new Player(library);
     library.refresh();
-    player.onplay = function () {
-        var song = player.playing || player.paused;
+    player.onplay = () => {
+        const song = player.playing || player.paused;
         if (song) {
-            labelElement.textContent = song.artist + " - " + song.title;
-            library.getAlbumBySong(song.id).then(function (album) {
+            labelElement.textContent = `${song.artist} - ${song.title}`;
+            library.getAlbumBySong(song.id).then((album) => {
                 return album.getCover(library);
-            }).then(function (cover) {
+            }).then((cover) => {
                 coverSwitcher.switch(cover);
             });
         }
@@ -317,7 +301,7 @@ function main() {
     skipButton.addEventListener('click', function () {
         player.skip();
     });
-    var shown = false;
+    let shown = false;
     albumsButton.addEventListener('click', function () {
         if (shown) {
             albumsList.innerHTML = '';
@@ -325,36 +309,36 @@ function main() {
             return;
         }
         shown = true;
-        library.getAlbums().then(function (albums) {
-            albums.sort(function (a, b) { return a.compare(b); });
+        library.getAlbums().then((albums) => {
+            albums.sort((a, b) => { return a.compare(b); });
             albumsList.innerHTML = '';
-            // Add the "shuffle" entry
             {
-                var el = document.createElement('div');
-                el.addEventListener('click', function () { player.shuffle(); });
-                var label = document.createElement('span');
+                const el = document.createElement('div');
+                el.addEventListener('click', () => { player.shuffle(); });
+                const label = document.createElement('span');
                 label.className = 'fa fa-random';
                 label.title = 'Shuffle';
                 el.appendChild(label);
                 albumsList.appendChild(el);
             }
-            var _loop_1 = function(album) {
-                var el = document.createElement('div');
+            for (let album of albums) {
+                const el = document.createElement('div');
+                const tracks = album.tracks;
                 el.addEventListener('click', function () {
-                    var songs = album.tracks.map(function (id) {
+                    const songs = tracks.map((id) => {
                         return library.getSong(id);
                     });
                     player.play(songs);
                 });
-                album.getCover(library).then(function (blob) {
+                album.getCover(library).then((blob) => {
                     if (blob !== null) {
                         el.innerHTML = '';
-                        el.style.backgroundImage = "url(" + URL.createObjectURL(blob) + ")";
+                        el.style.backgroundImage = `url(${URL.createObjectURL(blob)})`;
                         el.style.backgroundColor = 'transparent';
                     }
                     else {
-                        var artistElement = document.createElement('div');
-                        var titleElement = document.createElement('div');
+                        const artistElement = document.createElement('div');
+                        const titleElement = document.createElement('div');
                         artistElement.textContent = album.albumArtist;
                         titleElement.textContent = album.title;
                         el.appendChild(artistElement);
@@ -363,10 +347,6 @@ function main() {
                     }
                 });
                 albumsList.appendChild(el);
-            };
-            for (var _i = 0, albums_1 = albums; _i < albums_1.length; _i++) {
-                var album = albums_1[_i];
-                _loop_1(album);
             }
         });
     });

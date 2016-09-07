@@ -1,3 +1,5 @@
+/// <reference path="typings/whatwg-fetch/whatwg-fetch.d.ts" />
+
 export type SongID = string
 export type AlbumID = string
 
@@ -155,7 +157,7 @@ export class MediaLibrary {
         return this.root + song.stream()
     }
 
-    getSong(id: SongID) {
+    getSong(id: SongID): Song {
         if(this.songCache.has(id)) {
             return this.songCache.get(id)
         } else {
@@ -163,20 +165,21 @@ export class MediaLibrary {
         }
     }
 
-    getAlbums() {
+    async getAlbums(): Promise<Album[]> {
         const albums: Album[] = []
-        return Promise.all(this.albums.map((id) => {
-            return this.getAlbum(id).then((album: Album) => {
-                albums.push(album)
-            }).catch((err) => {
-                console.error(err)
-            })
-        })).then(() => {
-            return albums
-        })
+        const response = await self.fetch(`${this.root}/music/albums`)
+        const data = await response.json()
+
+        for(let i = 0; i < data.length; i += 1) {
+            const album = Album.parse(data[i])
+            this.albumCache.set(album.id, album)
+            albums.push(album)
+        }
+
+        return albums
     }
 
-    getAlbum(id: AlbumID) {
+    getAlbum(id: AlbumID): Promise<Album> {
         if(this.albumCache.has(id)) {
             return new Promise((resolve, reject) => { resolve(this.albumCache.get(id)) })
         }
@@ -190,7 +193,7 @@ export class MediaLibrary {
         })
     }
 
-    getAlbumBySong(id: SongID) {
+    getAlbumBySong(id: SongID): Promise<Album> {
         return this.getAlbum(this.albumIndex.get(id))
     }
 }

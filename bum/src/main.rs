@@ -35,13 +35,6 @@ struct SongListEntry<'a> {
     album_id: &'a str,
 }
 
-struct AlbumListEntry<'a> {
-    id: &'a str,
-    title: &'a str,
-    album_artist: &'a str,
-    year: u32,
-}
-
 impl<'a> ToJson for SongListEntry<'a> {
     fn to_json(&self) -> Value {
         let mut d = std::collections::BTreeMap::new();
@@ -49,18 +42,6 @@ impl<'a> ToJson for SongListEntry<'a> {
         d.insert("title".to_string(), self.title.to_json());
         d.insert("artist".to_string(), self.artist.to_json());
         d.insert("album".to_string(), self.album_id.to_json());
-
-        return Value::Object(d);
-    }
-}
-
-impl<'a> ToJson for AlbumListEntry<'a> {
-    fn to_json(&self) -> Value {
-        let mut d = std::collections::BTreeMap::new();
-        d.insert("id".to_string(), self.id.to_json());
-        d.insert("title".to_string(), self.title.to_json());
-        d.insert("album_artist".to_string(), self.album_artist.to_json());
-        d.insert("year".to_string(), self.year.to_json());
 
         return Value::Object(d);
     }
@@ -310,17 +291,9 @@ impl AlbumListHandler {
 
 impl web::Handler for AlbumListHandler {
     fn handle(&self, _: &hyper::server::Request, mut res: hyper::server::Response, _: &web::Args) {
-        let mut albums = Vec::new();
-        for album in self.db.albums() {
-            let entry = AlbumListEntry {
-                id: &album.id,
-                title: &album.title,
-                album_artist: &album.album_artist,
-                year: album.year.unwrap_or(0),
-            };
-
-            albums.push(entry.to_json());
-        }
+        let albums = self.db.albums()
+                            .map(|album| album.to_json())
+                            .collect::<Vec<serde_json::Value>>();
 
         *res.status_mut() = hyper::status::StatusCode::Ok;
         res.headers_mut().set(hyper::header::ContentType::json());
