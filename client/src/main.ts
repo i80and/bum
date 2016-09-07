@@ -14,25 +14,14 @@ class Player {
 
     onplay: ()=>void
 
-    constructor(element: HTMLAudioElement, library: media.MediaLibrary) {
+    constructor(library: media.MediaLibrary) {
         this.playing = null
         this.paused = null
-
-        this.element = element
         this.library = library
         this.playlist = []
-
-        this.element.controls = false
-        this.element.onended = () => {
-            this.doPlay()
-        }
-        this.element.onerror = () => {
-            const id = this.playing? this.playing.id : 'unknown'
-            console.error(`Error playing ${id}`)
-            this.doPlay()
-        }
-
         this.onplay = () => {}
+
+        this._initElement()
     }
 
     play(songs: media.Song[]) {
@@ -72,7 +61,12 @@ class Player {
         this.playing = null
         if(this.playlist.length === 0) {
             this.onplay()
-            this.element.pause()
+
+            // Don't pause an errored stream. This can cause a nasty
+            // error loop, where pausing triggers reparsing bad input.
+            if(!this.element.error) {
+                this.element.pause()
+            }
             return
         }
 
@@ -82,6 +76,21 @@ class Player {
         this.element.play()
 
         this.onplay()
+    }
+
+    _initElement(): void {
+        this.element = document.createElement('audio')
+        this.element.controls = false
+
+        this.element.onended = () => {
+            this.doPlay()
+        }
+
+        this.element.onerror = () => {
+            const id = this.playing? this.playing.id : 'unknown'
+            console.error(`Error playing ${id}`)
+            this.doPlay()
+        }
     }
 }
 
@@ -119,8 +128,6 @@ class CoverSwitcher {
 }
 
 function main() {
-    const audioElement = <HTMLAudioElement>document.getElementById('player')
-
     const albumsButton = document.getElementById('albums-button')
     const albumsList = document.getElementById('album-list')
     const playButton = document.getElementById('play-button')
@@ -129,7 +136,7 @@ function main() {
 
     const coverSwitcher = new CoverSwitcher(<HTMLImageElement[]>Array.from(document.getElementsByClassName('cover')))
     const library = new media.MediaLibrary('/api')
-    const player = new Player(audioElement, library)
+    const player = new Player(library)
 
     library.refresh()
 

@@ -15,26 +15,15 @@ var media = _interopRequireWildcard(_media);
 var EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP';
 
 var Player = (function () {
-    function Player(element, library) {
-        var _this = this;
-
+    function Player(library) {
         _classCallCheck(this, Player);
 
         this.playing = null;
         this.paused = null;
-        this.element = element;
         this.library = library;
         this.playlist = [];
-        this.element.controls = false;
-        this.element.onended = function () {
-            _this.doPlay();
-        };
-        this.element.onerror = function () {
-            var id = _this.playing ? _this.playing.id : 'unknown';
-            console.error('Error playing ' + id);
-            _this.doPlay();
-        };
         this.onplay = function () {};
+        this._initElement();
     }
 
     _createClass(Player, [{
@@ -66,14 +55,14 @@ var Player = (function () {
     }, {
         key: 'shuffle',
         value: function shuffle() {
-            var _this2 = this;
+            var _this = this;
 
             this.library.shuffle().then(function (ids) {
                 return ids.map(function (id) {
-                    return _this2.library.getSong(id);
+                    return _this.library.getSong(id);
                 });
             }).then(function (songs) {
-                _this2.play(songs);
+                _this.play(songs);
             });
         }
     }, {
@@ -83,7 +72,11 @@ var Player = (function () {
             this.playing = null;
             if (this.playlist.length === 0) {
                 this.onplay();
-                this.element.pause();
+                // Don't pause an errored stream. This can cause a nasty
+                // error loop, where pausing triggers reparsing bad input.
+                if (!this.element.error) {
+                    this.element.pause();
+                }
                 return;
             }
             var song = this.playlist.pop();
@@ -91,6 +84,22 @@ var Player = (function () {
             this.element.src = this.library.songUrl(song);
             this.element.play();
             this.onplay();
+        }
+    }, {
+        key: '_initElement',
+        value: function _initElement() {
+            var _this2 = this;
+
+            this.element = document.createElement('audio');
+            this.element.controls = false;
+            this.element.onended = function () {
+                _this2.doPlay();
+            };
+            this.element.onerror = function () {
+                var id = _this2.playing ? _this2.playing.id : 'unknown';
+                console.error('Error playing ' + id);
+                _this2.doPlay();
+            };
         }
     }]);
 
@@ -133,7 +142,6 @@ var CoverSwitcher = (function () {
 })();
 
 function main() {
-    var audioElement = document.getElementById('player');
     var albumsButton = document.getElementById('albums-button');
     var albumsList = document.getElementById('album-list');
     var playButton = document.getElementById('play-button');
@@ -141,7 +149,7 @@ function main() {
     var labelElement = document.getElementById('caption');
     var coverSwitcher = new CoverSwitcher(Array.from(document.getElementsByClassName('cover')));
     var library = new media.MediaLibrary('/api');
-    var player = new Player(audioElement, library);
+    var player = new Player(library);
     library.refresh();
     player.onplay = function () {
         var song = player.playing || player.paused;
