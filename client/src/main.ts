@@ -125,9 +125,95 @@ class CoverSwitcher {
     }
 }
 
+class AlbumsView {
+    root: HTMLElement
+    library: media.MediaLibrary
+    shown: boolean
+
+    onPlay: (songs: media.Song[]) => void
+    onShuffle: () => void
+
+    constructor(root: HTMLElement, library: media.MediaLibrary) {
+        this.root = root
+        this.shown = false
+        this.library = library
+
+        this.onPlay = () => {}
+        this.onShuffle = () => {}
+    }
+
+    setPlayer(player: Player): void {
+        this.onPlay = (songs) => { player.play(songs) }
+        this.onShuffle = () => { player.shuffle() }
+    }
+
+    hide(): void {
+        this.root.innerHTML = ''
+        this.shown = false
+        return
+    }
+
+    toggle(): void {
+        if(this.shown) {
+            this.hide()
+        }
+
+        this.shown = true
+        this.library.getAlbums().then((albums) => {
+            albums.sort((a, b) => { return a.compare(b) })
+            this.root.innerHTML = ''
+
+            // Add the "shuffle" entry
+            {
+                const el = document.createElement('div')
+                el.addEventListener('click', () => { this.onShuffle() })
+
+                const label = document.createElement('span')
+                label.className = 'fa fa-random'
+                label.title = 'Shuffle'
+
+                el.appendChild(label)
+                this.root.appendChild(el)
+            }
+
+            for(let curAlbum of albums) {
+                const el = document.createElement('div')
+                const album = curAlbum
+                el.addEventListener('click', () => {
+                    const songs = album.tracks.map((id) => {
+                        return this.library.getSong(id)
+                    })
+
+                    this.onPlay(songs)
+                    this.hide()
+                })
+
+                album.getCover(this.library).then((blob: Blob) => {
+                    if(blob !== null) {
+                        el.innerHTML = ''
+                        el.style.backgroundImage = `url(${URL.createObjectURL(blob) })`
+                        el.style.backgroundColor = 'transparent'
+                    } else {
+                        const artistElement = document.createElement('div')
+                        const titleElement = document.createElement('div')
+
+                        artistElement.textContent = album.albumArtist
+                        titleElement.textContent = album.title
+
+                        el.appendChild(artistElement)
+                        el.appendChild(titleElement)
+                        el.style.backgroundImage = ''
+                    }
+
+                })
+
+                this.root.appendChild(el)
+            }
+        })
+    }
+}
+
 function main() {
-    const albumsButton = document.getElementById('albums-button')
-    const albumsList = document.getElementById('album-list')
     const playButton = document.getElementById('play-button')
     const skipButton = document.getElementById('skip-button')
     const labelElement = document.getElementById('caption')
@@ -175,65 +261,12 @@ function main() {
         player.skip()
     })
 
-    let shown = false
+    const albumsButton = document.getElementById('albums-button')
+    const albumsList = document.getElementById('album-list')
+    const albumsView = new AlbumsView(albumsList, library)
+    albumsView.setPlayer(player)
     albumsButton.addEventListener('click', function() {
-        if(shown) {
-            albumsList.innerHTML = ''
-            shown = false
-            return
-        }
-
-        shown = true
-        library.getAlbums().then((albums) => {
-            albums.sort((a, b) => { return a.compare(b) })
-            albumsList.innerHTML = ''
-
-            // Add the "shuffle" entry
-            {
-                const el = document.createElement('div')
-                el.addEventListener('click', () => { player.shuffle() })
-
-                const label = document.createElement('span')
-                label.className = 'fa fa-random'
-                label.title = 'Shuffle'
-
-                el.appendChild(label)
-                albumsList.appendChild(el)
-            }
-
-            for(let curAlbum of albums) {
-                const el = document.createElement('div')
-                const album = curAlbum
-                el.addEventListener('click', function() {
-                    const songs = album.tracks.map((id) => {
-                        return library.getSong(id)
-                    })
-
-                    player.play(songs)
-                })
-
-                album.getCover(library).then((blob: Blob) => {
-                    if(blob !== null) {
-                        el.innerHTML = ''
-                        el.style.backgroundImage = `url(${URL.createObjectURL(blob) })`
-                        el.style.backgroundColor = 'transparent'
-                    } else {
-                        const artistElement = document.createElement('div')
-                        const titleElement = document.createElement('div')
-
-                        artistElement.textContent = album.albumArtist
-                        titleElement.textContent = album.title
-
-                        el.appendChild(artistElement)
-                        el.appendChild(titleElement)
-                        el.style.backgroundImage = ''
-                    }
-
-                })
-
-                albumsList.appendChild(el)
-            }
-        })
+        albumsView.toggle()
     })
 }
 
