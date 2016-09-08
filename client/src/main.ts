@@ -201,11 +201,11 @@ function main() {
                 albumsList.appendChild(el)
             }
 
-            for(let album of albums) {
+            for(let curAlbum of albums) {
                 const el = document.createElement('div')
-                const tracks = album.tracks
+                const album = curAlbum
                 el.addEventListener('click', function() {
-                    const songs = tracks.map((id) => {
+                    const songs = album.tracks.map((id) => {
                         return library.getSong(id)
                     })
 
