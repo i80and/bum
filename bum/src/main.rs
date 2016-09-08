@@ -302,9 +302,8 @@ impl web::Handler for AlbumListHandler {
 }
 
 fn main() {
-    // Pledge ourselves to limit our exploitable surface area. Sadly, taglib
-    // requires WPath.
-    match pledge![Stdio, RPath, WPath, Inet, Proc, Exec] {
+    // Pledge ourselves to limit our exploitable surface area.
+    match pledge![Stdio, RPath, Inet, Proc, Exec] {
         Ok(_) | Err(pledge::Error::UnsupportedPlatform) => (),
         _ => panic!("Failed to pledge daemon")
     }
