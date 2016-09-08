@@ -14,19 +14,19 @@ extern crate url;
 extern crate walkdir;
 
 #[macro_use] extern crate pledge;
-use pledge::{pledge, Promise};
-
-use serde_json::value::ToJson;
-use serde_json::value::Value;
-use std::io::Write;
-use std::io::Read;
-use hyper::mime;
 
 mod media;
 mod tagparser;
 mod transcode;
 mod util;
 mod web;
+
+use std::io::Write;
+use pledge::{pledge, Promise};
+use serde_json::value::ToJson;
+use serde_json::value::Value;
+use hyper::mime;
+use transcode::Transcoder;
 
 struct SongListEntry<'a> {
     id: &'a str,
@@ -98,7 +98,7 @@ impl SongHandler {
                      song: &media::Song,
                      quality: transcode::Quality,
                      mut res: hyper::server::Response) {
-        let mut transcoder = transcode::transcode(&song.path, quality).unwrap();
+        let mut transcoder = Transcoder::transcode(&song.path, quality).unwrap();
 
         let mimetype = mime::Mime(mime::TopLevel::Audio,
                                   mime::SubLevel::Ext(String::from("webm")),
@@ -109,9 +109,8 @@ impl SongHandler {
 
         // gstreamer makes very small writes, so this buffer size is ample.
         let mut buf = [0; 1024];
-        let mut transcoder_stream = transcoder.stdout.unwrap();
         loop {
-            let bytes = transcoder_stream.read(&mut buf).unwrap();
+            let bytes = transcoder.read(&mut buf);
             if bytes == 0 {
                 break;
             }
@@ -122,13 +121,6 @@ impl SongHandler {
         }
 
         res.end().unwrap();
-
-        // Move the stream back so we can collect the child
-        transcoder.stdout = Some(transcoder_stream);
-        match transcoder.wait() {
-            Ok(v) if !v.success() => println!("Transcoding failed: {}", song.id),
-            _ => (),
-        }
     }
 }
 

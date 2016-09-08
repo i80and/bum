@@ -1,5 +1,7 @@
-use std;
 use std::error::Error;
+use std::io::Read;
+use std::process::Child;
+use std;
 
 pub enum Quality {
     Low = 0,
@@ -27,15 +29,45 @@ impl Quality {
     }
 }
 
-pub fn transcode(path: &std::path::Path, quality: Quality) -> Result<std::process::Child, String> {
-    let child = std::process::Command::new("./target/debug/bum-transcode")
-        .arg(quality.to_int().to_string())
-        .arg(path)
-        .stdout(std::process::Stdio::piped())
-        .spawn();
+pub struct Transcoder {
+    child: Child
+}
 
-    return match child {
-        Ok(c) => Ok(c),
-        Err(s) => Err(format!("Error starting transcode helper: {}", s.description())),
-    };
+impl Transcoder {
+    pub fn transcode(path: &std::path::Path, quality: Quality) -> Result<Transcoder, String> {
+        let child = std::process::Command::new("./target/debug/bum-transcode")
+            .arg(quality.to_int().to_string())
+            .arg(path)
+            .stdout(std::process::Stdio::piped())
+            .spawn();
+
+        let child = match child {
+            Ok(c) => c,
+            Err(s) => return Err(format!("Error starting transcode helper: {}", s.description())),
+        };
+
+        return Ok(Transcoder {
+            child: child
+        });
+    }
+
+    pub fn read(&mut self, mut buf: &mut [u8]) -> usize {
+        let stdout = self.child.stdout.as_mut().unwrap();
+        let bytes_read = stdout.read(&mut buf).unwrap();
+
+        return bytes_read;
+    }
+}
+
+impl Drop for Transcoder {
+    fn drop(&mut self) {
+        // Closing the child's stdout ensures that when it tries to write data,
+        // it gets SIGPIPE and exits.
+        self.child.stdout = None;
+
+        match self.child.wait() {
+            Ok(v) if !v.success() => println!("Transcoding failed"),
+            _ => (),
+        }
+    }
 }
