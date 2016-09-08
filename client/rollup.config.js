@@ -1,4 +1,6 @@
 import typescript from 'rollup-plugin-typescript'
+import uglify from 'rollup-plugin-uglify'
+import { minify } from 'uglify-js'
 
 export default {
     entry: './src/main.ts',
@@ -6,6 +8,7 @@ export default {
     format: 'iife',
 
     plugins: [
-        typescript()
+        typescript(),
+        uglify({}, minify)
     ]
 }
