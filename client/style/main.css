@@ -115,6 +115,10 @@ img.cover.old {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
 }
 
 #album-list > div > div {
