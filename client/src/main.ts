@@ -156,6 +156,7 @@ class AlbumsView {
     toggle(): void {
         if(this.shown) {
             this.hide()
+            return
         }
 
         this.shown = true
