@@ -37,12 +37,7 @@ impl<'a> Args<'a> {
     }
 
     pub fn param_i64(&self, name: &str) -> Option<i64> {
-        let val = match self.query.search(name) {
-            Some(v) => v,
-            None => return None,
-        };
-
-        let val = match val.as_str() {
+        let val = match self.param(name) {
             Some(v) => v,
             None => return None,
         };
