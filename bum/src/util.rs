@@ -8,18 +8,12 @@ use hyper::mime;
 use libc;
 use time;
 
-extern "C" {
-    pub fn realpath(pathname: *const libc::c_char,
-                    resolved: *mut libc::c_char)
-                    -> *mut libc::c_char;
-}
-
 pub fn canonicalize(raw_path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
     let path = try!(std::ffi::CString::new(raw_path.as_os_str().as_bytes()));
     let buf;
 
     unsafe {
-        let r = realpath(path.as_ptr(), std::ptr::null_mut());
+        let r = libc::realpath(path.as_ptr(), std::ptr::null_mut());
         if r.is_null() {
             return Err(std::io::Error::last_os_error());
         }
