@@ -66,7 +66,7 @@ impl Drop for Transcoder {
         self.child.stdout = None;
 
         match self.child.wait() {
-            Ok(v) if !v.success() => println!("Transcoding failed"),
+            Ok(v) if !v.success() => error!("Transcoding failed"),
             _ => (),
         }
     }

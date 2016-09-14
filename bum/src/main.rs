@@ -5,10 +5,12 @@ extern crate bum_rpc;
 extern crate hyper;
 extern crate image;
 extern crate libc;
+#[macro_use] extern crate log;
 extern crate queryst;
 extern crate regex;
 extern crate resp;
 extern crate serde_json;
+extern crate simple_logger;
 extern crate time;
 extern crate toml;
 extern crate url;
@@ -284,6 +286,8 @@ impl web::Handler for AlbumListHandler {
 }
 
 fn main() {
+    simple_logger::init_with_level(log::LogLevel::Info).unwrap();
+
     // Pledge ourselves to limit our exploitable surface area.
     match pledge![Stdio, RPath, Inet, Proc, Exec] {
         Ok(_) | Err(pledge::Error::UnsupportedPlatform) => (),
@@ -308,7 +312,7 @@ fn main() {
 
     let (db, db_errors) = media::MediaDatabase::load(&media_path);
     for error in db_errors {
-        println!("{}", error);
+        warn!("{}", error);
     }
     let db = std::sync::Arc::new(db);
 
@@ -329,10 +333,9 @@ fn main() {
                      r"/(.*)",
                      web::StaticHandler::new("../client/build"));
 
-    println!("Preparing to listen on {}", host);
+    info!("Preparing to listen on {}", host);
     match web::listen(host, router) {
-        Err(hyper::error::Error::Io(msg)) => println!("Failed to start server: {}", msg),
-        Err(msg) => println!("Failed to start server: {}", msg),
+        Err(msg) => error!("Failed to start server: {}", msg),
         _ => (),
     }
 }
