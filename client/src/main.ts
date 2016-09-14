@@ -189,7 +189,7 @@ class AlbumsView {
                     this.hide()
                 })
 
-                album.getCover(this.library).then((blob: Blob) => {
+                album.getThumbnail(this.library).then((blob: Blob) => {
                     if(blob !== null) {
                         el.innerHTML = ''
                         el.style.backgroundImage = `url(${URL.createObjectURL(blob) })`

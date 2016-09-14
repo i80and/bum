@@ -32,6 +32,7 @@ export class Album {
     tracks: SongID[]
     private haveCover: boolean
     private cover: Blob
+    private thumbnail: Blob
 
     constructor(id: AlbumID, title: string, albumArtist: string, year: string, tracks: SongID[], haveCover: boolean) {
         this.id = id
@@ -42,9 +43,10 @@ export class Album {
 
         this.haveCover = haveCover
         this.cover = null
+        this.thumbnail = null
     }
 
-    getCover(library: MediaLibrary) {
+    getCover(library: MediaLibrary): Promise<Blob> {
         if(!this.haveCover) {
             return new Promise((resolve, reject) => { resolve(null) })
         }
@@ -58,6 +60,24 @@ export class Album {
             return response.blob()
         }).then((data: Blob) => {
             this.cover = data
+            return data
+        })
+    }
+
+    getThumbnail(library: MediaLibrary): Promise<Blob> {
+        if(!this.haveCover) {
+            return new Promise((resolve, reject) => { resolve(null) })
+        }
+
+        if(this.thumbnail) {
+            return new Promise((resolve, reject) => { resolve(this.thumbnail) })
+        }
+
+        return self.fetch(`${library.root}/music/album/${this.id}/thumbnail`).then((response) => {
+            if(!response.ok) { return null }
+            return response.blob()
+        }).then((data: Blob) => {
+            this.thumbnail = data
             return data
         })
     }

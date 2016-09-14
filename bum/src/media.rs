@@ -1,12 +1,22 @@
 use std::hash::{Hash, Hasher};
+use std::io::Read;
+use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use std;
+
+use hyper::mime;
+use image::GenericImage;
+use image;
+use time;
 use walkdir::WalkDir;
+
 use tagparser;
+use util;
 
 const COVER_FILES: [&'static str; 2] = ["cover.jpg", "cover.png"];
 const MUSIC_EXTENSIONS: [&'static str; 8] = ["opus", "ogg", "oga", "flac", "mp3", "mp4", "m4a",
                                              "wma"];
+const THUMBNAIL_SIZE: u32 = 200;
 
 enum MediaDescriptionType {
     Album,
@@ -30,11 +40,53 @@ pub struct Song {
     pub path: std::path::PathBuf,
 }
 
-#[derive(Debug)]
-pub enum Cover {
-    FromFile(std::path::PathBuf),
-    FromTags(std::path::PathBuf),
-    None,
+pub struct Cover {
+    pub data: Vec<u8>,
+    pub mimetype: mime::Mime,
+    pub mtime: time::Tm
+}
+
+impl Cover {
+    fn from_file(path: &Path) -> Result<Cover, std::io::Error> {
+        let mimetype = util::path_to_mimetype(path);
+        let mtime = util::mtime(try!(std::fs::metadata(path)));
+        let mut file = try!(std::fs::File::open(&path));
+        let mut buf = vec![];
+        try!(file.read_to_end(&mut buf));
+
+        return Ok(Cover {
+            data: buf,
+            mimetype: mimetype,
+            mtime: mtime
+        });
+    }
+
+    pub fn resize(&self) -> Result<Cover, String> {
+        let parsed = image::load_from_memory(&self.data).unwrap();
+        let mut output_buf = vec![];
+        let resized = parsed.resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, image::FilterType::Lanczos3);
+        {
+            let mut encoder = image::jpeg::JPEGEncoder::new(&mut output_buf);
+            encoder.encode(&resized.raw_pixels(),
+                           resized.width(), resized.height(),
+                           image::ColorType::RGB(8)).unwrap();
+        }
+
+        return Ok(Cover {
+            data: output_buf,
+            mimetype: mime::Mime(mime::TopLevel::Image,
+                                 mime::SubLevel::Jpeg,
+                                 vec![]),
+            mtime: self.mtime
+        });
+    }
+
+    pub fn servable(&self) -> bool {
+        if self.data.len() > 50000 { return false; }
+        return self.mimetype == mime::Mime(mime::TopLevel::Image,
+                                    mime::SubLevel::Jpeg,
+                                    vec![]);
+    }
 }
 
 pub struct Album {
@@ -43,7 +95,7 @@ pub struct Album {
     pub album_artist: String,
     pub year: Option<u32>,
     pub tracks: Vec<SongID>,
-    pub cover: Cover,
+    pub cover: Option<Cover>,
 }
 
 pub struct MediaDatabase {
@@ -269,22 +321,23 @@ impl MediaDatabase {
             .next();
 
         let cover = match cover_path {
-                Some(p) => Some(Cover::FromFile(p)),
-                None => None,
-            }
-            .or_else(|| {
-                let track = match tracks.get(0) {
-                    Some(t) => t,
-                    None => return None,
-                };
+            Some(ref path) => match Cover::from_file(path) {
+                Ok(image) => Some(image),
+                Err(_) => None,
+            },
+            None => None,
+        }.or_else(|| {
+            let track = match tracks.get(0) {
+                Some(t) => t,
+                None => return None,
+            };
 
-                let song_path = self.get_song(track).unwrap().path.clone();
-                return match self.get_tagparser().load_cover(&song_path) {
-                    Ok(_) => Some(Cover::FromTags(song_path)),
-                    Err(_) => None,
-                };
-            })
-            .unwrap_or(Cover::None);
+            let song_path = self.get_song(track).unwrap().path.clone();
+            return match self.get_tagparser().load_cover(&song_path) {
+                Ok(cover) => Some(cover),
+                Err(_) => None,
+            };
+        });
 
         let album = Album {
             id: album_id,

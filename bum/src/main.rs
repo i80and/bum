@@ -3,6 +3,7 @@
 extern crate bum_rpc;
 #[macro_use] extern crate clap;
 extern crate hyper;
+extern crate image;
 extern crate libc;
 extern crate queryst;
 extern crate regex;
@@ -67,12 +68,7 @@ impl ToJson for media::Album {
         d.insert("album_artist".to_string(), self.album_artist.to_json());
         d.insert("year".to_string(), self.year.to_json());
         d.insert("tracks".to_string(), self.tracks.to_json());
-        d.insert("cover".to_string(),
-                 match self.cover {
-                         media::Cover::None => false,
-                         _ => true,
-                     }
-                     .to_json());
+        d.insert("cover".to_string(), self.cover.is_some().to_json());
 
         return Value::Object(d);
     }
@@ -206,44 +202,39 @@ impl AlbumHandler {
     }
 
     fn handle_cover(&self,
-                    album: &media::Album,
-                    req: &hyper::server::Request,
-                    mut res: hyper::server::Response) {
-        match album.cover {
-            media::Cover::FromFile(ref path) => {
-                web::serve_file(path.clone(), req, res);
-            }
-            media::Cover::FromTags(ref path) => {
-                let metadata = match std::fs::metadata(path) {
-                    Ok(m) => m,
-                    Err(_) => {
-                        *res.status_mut() = hyper::status::StatusCode::NotFound;
-                        return;
-                    }
-                };
-
-                if !web::should_serve_file(&metadata, req, &mut res) {
-                    *res.status_mut() = hyper::status::StatusCode::NotModified;
-                    return;
-                }
-
-                match self.db.get_tagparser().load_cover(path) {
-                    Ok(image) => {
-                        let mimetype = image.mimetype.parse().unwrap();
-                        let data = &image.data;
-                        res.headers_mut().set(hyper::header::ContentLength(data.len() as u64));
-                        res.headers_mut().set(hyper::header::ContentType(mimetype));
-                        *res.status_mut() = hyper::status::StatusCode::Ok;
-                        let mut res = res.start().unwrap();
-                        res.write_all(data).unwrap();
-                    }
-                    Err(_) => *res.status_mut() = hyper::status::StatusCode::NotFound,
-                }
-            }
-            _ => {
+                   album: &media::Album,
+                   req: &hyper::server::Request,
+                   mut res: hyper::server::Response,
+                   thumbnail: bool) {
+        let cover = match album.cover {
+            Some(ref cover) => cover,
+            None => {
                 *res.status_mut() = hyper::status::StatusCode::NotFound;
+                return;
             }
+        };
+
+        if !web::should_serve_file(cover.mtime, req, &mut res) {
+            *res.status_mut() = hyper::status::StatusCode::NotModified;
+            return;
         }
+
+        // If we're serving a thumbnail and the cover is too big, resize it
+        let resized = match thumbnail {
+            true if !cover.servable() => Some(cover.resize().unwrap()),
+            _ => None
+        };
+
+        let cover = match resized {
+            Some(ref new_cover) => new_cover,
+            None => cover
+        };
+
+        res.headers_mut().set(hyper::header::ContentLength(cover.data.len() as u64));
+        res.headers_mut().set(hyper::header::ContentType(cover.mimetype.clone()));
+        *res.status_mut() = hyper::status::StatusCode::Ok;
+        let mut res = res.start().unwrap();
+        res.write_all(&(cover.data)).unwrap();
     }
 }
 
@@ -265,7 +256,8 @@ impl web::Handler for AlbumHandler {
 
         match component {
             "metadata" => return self.handle_metadata(album, res),
-            "cover" => return self.handle_cover(album, req, res),
+            "cover" => return self.handle_cover(album, req, res, false),
+            "thumbnail" => return self.handle_cover(album, req, res, true),
             _ => panic!("Unknown component {}", component),
         };
     }
@@ -333,7 +325,7 @@ fn main() {
                      r"/api/music/albums",
                      AlbumListHandler::new(&db));
     router.add_route(web::Method::Get,
-                     r"/api/music/album/([\w\\-]+)/(metadata|cover)",
+                     r"/api/music/album/([\w\\-]+)/(metadata|thumbnail|cover)",
                      AlbumHandler::new(&db));
     router.add_route(web::Method::Get,
                      r"/(.*)",

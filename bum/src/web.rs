@@ -1,4 +1,6 @@
+use std::io::{Read, Write};
 use std;
+
 use regex;
 use queryst;
 use hyper;
@@ -6,11 +8,6 @@ use url;
 use time;
 use util;
 use serde_json;
-
-use std::io::{Read, Write};
-use std::os::unix::fs::MetadataExt;
-use hyper::mime;
-
 pub use hyper::method::Method;
 
 pub struct Args<'a> {
@@ -116,12 +113,11 @@ pub struct StaticHandler {
     root: std::sync::Arc<std::path::PathBuf>,
 }
 
-pub fn should_serve_file(metadata: &std::fs::Metadata,
+pub fn should_serve_file(mtime: time::Tm,
                          req: &hyper::server::Request,
                          res: &mut hyper::server::Response)
                          -> bool {
     // Check the If-Modified-Since against our mtime
-    let mtime = time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
     let mut should_send = true;
     match req.headers.get::<hyper::header::IfModifiedSince>() {
         Some(&hyper::header::IfModifiedSince(hyper::header::HttpDate(query))) => {
@@ -161,34 +157,10 @@ pub fn serve_file(mut path: std::path::PathBuf,
     };
 
     res.headers_mut().set(hyper::header::ContentLength(metadata.len()));
-
-    // Get MIME type
-    let mut mimetype = mime::Mime(mime::TopLevel::Application,
-                                  mime::SubLevel::Ext(String::from("octet-stream")),
-                                  vec![]);
-    match path.extension() {
-        Some(ext) => {
-            mimetype = match &*(ext.to_string_lossy()) {
-                "html" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Html, vec![]),
-                "json" => mime::Mime(mime::TopLevel::Application, mime::SubLevel::Json, vec![]),
-                "png" => mime::Mime(mime::TopLevel::Image, mime::SubLevel::Png, vec![]),
-                "jpg" | "jpeg" => mime::Mime(mime::TopLevel::Image, mime::SubLevel::Jpeg, vec![]),
-                "txt" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Plain, vec![]),
-                "css" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Css, vec![]),
-                "js" => {
-                    mime::Mime(mime::TopLevel::Application,
-                               mime::SubLevel::Javascript,
-                               vec![])
-                }
-                "toml" => mime::Mime(mime::TopLevel::Text, mime::SubLevel::Plain, vec![]),
-                _ => mimetype,
-            }
-        }
-        _ => (),
-    }
+    let mimetype = util::path_to_mimetype(&path);
     res.headers_mut().set(hyper::header::ContentType(mimetype));
 
-    if !should_serve_file(&metadata, req, &mut res) {
+    if !should_serve_file(util::mtime(metadata), req, &mut res) {
         *res.status_mut() = hyper::status::StatusCode::NotModified;
         return;
     }

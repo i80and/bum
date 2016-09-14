@@ -3,13 +3,15 @@ use std::error::Error;
 use std::io;
 use std::path::Path;
 use std::process;
-use resp;
-use bum_rpc;
+use std;
 
-pub struct Image {
-    pub mimetype: String,
-    pub data: Vec<u8>,
-}
+use hyper::mime;
+use resp;
+use time;
+
+use bum_rpc;
+use media::Cover;
+use util;
 
 pub struct Tags {
     tags: HashMap<String, String>,
@@ -143,7 +145,7 @@ impl Server {
         }
     }
 
-    pub fn load_cover(&mut self, path: &Path) -> Result<Image, String> {
+    pub fn load_cover(&mut self, path: &Path) -> Result<Cover, String> {
         let path_str = match path.to_str() {
             Some(s) => s.to_owned(),
             None => return Err("Cannot treat path as string".to_owned())
@@ -164,9 +166,22 @@ impl Server {
                     _ => return Err("Bad mimetype response from tagserver".to_owned())
                 };
 
-                return Ok(Image {
+                let mimetype: mime::Mime = match mimetype.parse() {
+                    Ok(m) => m,
+                    Err(_) => {
+                        return Err("Error parsing mimetype response from tagserver".to_owned())
+                    }
+                };
+
+                let mtime = match std::fs::metadata(path) {
+                    Ok(metadata) => util::mtime(metadata),
+                    Err(_) => time::now_utc()
+                };
+
+                return Ok(Cover {
                     mimetype: mimetype,
-                    data: data
+                    data: data,
+                    mtime: mtime,
                 });
             }
             Some(resp::Value::Error(msg)) => return Err(msg),

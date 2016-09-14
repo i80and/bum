@@ -27,10 +27,16 @@ regex = "0.1"
 resp = "0.4"
 serde_json = "0.8"
 time = "0.1"
+resize = "0.2.0"
+
 toml = "0.1"
 url = "1.2"
 walkdir = "0.1"
 bum-rpc = {path = "./src/bum-rpc"}
+
+[dependencies.image]
+version = "0.10.3"
+features = ["jpeg", "png_codec"]
 
 [build-dependencies]
 gcc = "0.3"
