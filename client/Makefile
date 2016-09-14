@@ -6,6 +6,7 @@ all: ./build/app.js ./build/index.html
 	rsync -ra --delete style/ build/style
 
 ./build/app.js: $(SRC) Makefile node_modules
+	./node_modules/.bin/tsc --outFile /dev/null
 	./node_modules/.bin/rollup -c
 
 ./build/index.html: index.html
