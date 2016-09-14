@@ -3,6 +3,8 @@ use std::io::Read;
 use std::process::Child;
 use std;
 
+use util;
+
 pub enum Quality {
     Low = 0,
     Medium = 1,
@@ -35,7 +37,8 @@ pub struct Transcoder {
 
 impl Transcoder {
     pub fn transcode(path: &std::path::Path, quality: Quality) -> Result<Transcoder, String> {
-        let child = std::process::Command::new("./target/debug/bum-transcode")
+        let child_path = util::get_helper("bum-transcode").unwrap();
+        let child = std::process::Command::new(child_path)
             .arg(quality.to_int().to_string())
             .arg(path)
             .stdout(std::process::Stdio::piped())

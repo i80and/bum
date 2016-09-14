@@ -1,7 +1,7 @@
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::ffi::OsStringExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std;
 
 use hyper::mime;
@@ -25,8 +25,8 @@ pub fn canonicalize(raw_path: &std::path::Path) -> std::io::Result<std::path::Pa
 
 pub fn path_to_mimetype(path: &Path) -> mime::Mime {
     let mut mimetype = mime::Mime(mime::TopLevel::Application,
-                              mime::SubLevel::Ext(String::from("octet-stream")),
-                              vec![]);
+                                  mime::SubLevel::Ext(String::from("octet-stream")),
+                                  vec![]);
     match path.extension() {
         Some(ext) => {
             mimetype = match &*(ext.to_string_lossy()) {
@@ -53,4 +53,18 @@ pub fn path_to_mimetype(path: &Path) -> mime::Mime {
 
 pub fn mtime(metadata: std::fs::Metadata) -> time::Tm {
     return time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
+}
+
+pub fn get_helper(name: &str) -> Result<PathBuf, ()> {
+    let current_exe = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(_) => return Err(())
+    };
+
+    let dir = match current_exe.parent() {
+        Some(path) => path,
+        None => return Err(())
+    };
+
+    return Ok(dir.join(name));
 }

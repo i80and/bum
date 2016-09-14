@@ -94,10 +94,11 @@ pub struct Server {
 
 impl Server {
     pub fn start() -> Result<Server, String> {
-        let child = process::Command::new("./target/debug/bum-tags")
-        .stdout(process::Stdio::piped())
-        .stdin(process::Stdio::piped())
-        .spawn();
+        let child_path = util::get_helper("bum-tags").unwrap();
+        let child = process::Command::new(child_path)
+            .stdout(process::Stdio::piped())
+            .stdin(process::Stdio::piped())
+            .spawn();
 
         return match child {
             Ok(c) =>  Ok(Server {
