@@ -69,7 +69,7 @@ impl Cover {
             let mut encoder = image::jpeg::JPEGEncoder::new(&mut output_buf);
             encoder.encode(&resized.raw_pixels(),
                            resized.width(), resized.height(),
-                           image::ColorType::RGB(8)).unwrap();
+                           parsed.color()).unwrap();
         }
 
         return Ok(Cover {
