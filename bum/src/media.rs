@@ -96,6 +96,7 @@ pub struct Album {
     pub year: Option<u32>,
     pub tracks: Vec<SongID>,
     pub cover: Option<Cover>,
+    pub thumbnail: Option<Cover>,
 }
 
 pub struct MediaDatabase {
@@ -339,6 +340,11 @@ impl MediaDatabase {
             };
         });
 
+        let thumbnail = match cover {
+            Some(ref cover) if !cover.servable() => Some(cover.resize().unwrap()),
+            _ => None
+        };
+
         let album = Album {
             id: album_id,
             title: title,
@@ -346,6 +352,7 @@ impl MediaDatabase {
             year: year,
             tracks: tracks,
             cover: cover,
+            thumbnail: thumbnail,
         };
 
         self.albums.insert(album.id.clone(), album);

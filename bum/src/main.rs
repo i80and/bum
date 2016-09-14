@@ -219,15 +219,13 @@ impl AlbumHandler {
             return;
         }
 
-        // If we're serving a thumbnail and the cover is too big, resize it
-        let resized = match thumbnail {
-            true if !cover.servable() => Some(cover.resize().unwrap()),
-            _ => None
-        };
-
-        let cover = match resized {
-            Some(ref new_cover) => new_cover,
-            None => cover
+        // Serve a thumbnail if requested and possible
+        let cover = match thumbnail {
+            true => match album.thumbnail {
+                Some(ref new_cover) => new_cover,
+                None => cover
+            },
+            _ => cover
         };
 
         res.headers_mut().set(hyper::header::ContentLength(cover.data.len() as u64));
