@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std;
 
 use hyper::mime;
 use image::GenericImage;
 use image;
+use num_cpus;
+use scoped_threadpool;
 use time;
 use walkdir::WalkDir;
 
@@ -37,7 +40,7 @@ pub struct Song {
     pub disc: u32,
     pub artist: String,
     pub year: Option<u32>,
-    pub path: std::path::PathBuf,
+    pub path: PathBuf,
 }
 
 pub struct Cover {
@@ -99,13 +102,22 @@ pub struct Album {
     pub thumbnail: Option<Cover>,
 }
 
+impl Album {
+    fn generate_thumbnail(&mut self) {
+        self.thumbnail = match self.cover {
+            Some(ref cover) if !cover.servable() => Some(cover.resize().unwrap()),
+            _ => None
+        };
+    }
+}
+
 pub struct MediaDatabase {
-    root: std::path::PathBuf,
+    root: PathBuf,
 
     songs: std::collections::BTreeMap<SongID, Song>,
-    albums: std::collections::HashMap<AlbumID, Album>,
+    albums: HashMap<AlbumID, Album>,
 
-    index_song_album: std::collections::HashMap<SongID, AlbumID>,
+    index_song_album: HashMap<SongID, AlbumID>,
     tagparser: Mutex<tagparser::Server>,
 }
 
@@ -113,14 +125,14 @@ impl MediaDatabase {
     pub fn load(root: &std::path::Path) -> (MediaDatabase, Vec<String>) {
         let mut errors = vec![];
         let mut db = MediaDatabase {
-            root: std::path::PathBuf::from(root),
+            root: PathBuf::from(root),
             songs: std::collections::BTreeMap::new(),
-            albums: std::collections::HashMap::new(),
-            index_song_album: std::collections::HashMap::new(),
+            albums: HashMap::new(),
+            index_song_album: HashMap::new(),
             tagparser: Mutex::new(tagparser::Server::start().unwrap())
         };
 
-        let mut song_prefixes = std::collections::HashMap::new();
+        let mut song_prefixes: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
 
         for entry in WalkDir::new(root) {
             let entry = match entry {
@@ -135,9 +147,9 @@ impl MediaDatabase {
             };
 
             if MUSIC_EXTENSIONS.iter().find(|e| **e == extension).is_some() {
-                let album_prefix = std::path::PathBuf::from(path.parent().unwrap());
+                let album_prefix = PathBuf::from(path.parent().unwrap());
                 let mut songs = song_prefixes.entry(album_prefix).or_insert(vec![]);
-                songs.push(std::path::PathBuf::from(&path));
+                songs.push(PathBuf::from(&path));
             }
         }
 
@@ -166,6 +178,16 @@ impl MediaDatabase {
 
             db.insert_album(songs, prefix);
         }
+
+        // Generate thumbnails
+        let mut pool = scoped_threadpool::Pool::new(num_cpus::get() as u32);
+        pool.scoped(|scoped| {
+            for (_, album) in db.albums.iter_mut() {
+                scoped.execute(move || {
+                    album.generate_thumbnail();
+                })
+            }
+        });
 
         return (db, errors);
     }
@@ -247,7 +269,7 @@ impl MediaDatabase {
             disc: disc,
             artist: String::from(artist),
             year: year,
-            path: std::path::PathBuf::from(path),
+            path: PathBuf::from(path),
         });
     }
 
@@ -255,7 +277,7 @@ impl MediaDatabase {
         // Track the artists that appear in an album. If more than half of an
         // album has the same artist, consider that artist the "album artist".
         // Otherwise, fall back to "Various Artists".
-        let mut album_artists = std::collections::HashMap::<String, u32>::new();
+        let mut album_artists = HashMap::<String, u32>::new();
 
         // Just use the first year and title we find
         let year = match songs.get(0) {
@@ -312,7 +334,7 @@ impl MediaDatabase {
         // Try to find a cover image
         let cover_path = COVER_FILES.iter()
             .filter_map(|candidate| {
-                let mut cover_path = std::path::PathBuf::from(prefix);
+                let mut cover_path = PathBuf::from(prefix);
                 cover_path.push(candidate);
                 return match std::fs::metadata(&cover_path) {
                     Ok(_) => Some(cover_path),
@@ -340,11 +362,6 @@ impl MediaDatabase {
             };
         });
 
-        let thumbnail = match cover {
-            Some(ref cover) if !cover.servable() => Some(cover.resize().unwrap()),
-            _ => None
-        };
-
         let album = Album {
             id: album_id,
             title: title,
@@ -352,7 +369,7 @@ impl MediaDatabase {
             year: year,
             tracks: tracks,
             cover: cover,
-            thumbnail: thumbnail,
+            thumbnail: None,
         };
 
         self.albums.insert(album.id.clone(), album);
