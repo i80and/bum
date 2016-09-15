@@ -1,6 +1,4 @@
-[![Build Status](https://travis-ci.org/i80and/bum.svg?branch=master)](https://travis-ci.org/i80and/bum)
-
-Bum Media Server
+Bum Media Server [![Build Status](https://travis-ci.org/i80and/bum.svg?branch=master)](https://travis-ci.org/i80and/bum)
 ================
 
 ![bum album browser](/doc/img/bum-screenshot.jpg?raw=true)
@@ -14,7 +12,8 @@ To compile Bum from source, you need the following:
 * TagLib
 * GStreamer 1.0
 
-Build and start Bum in the following way:
+To build and start Bum, run the following commands from the repository root:
 
+    cd bum
     cargo build --release
     ./target/release/bum -m ~/Music
