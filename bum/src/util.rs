@@ -37,16 +37,25 @@ pub fn mtime(metadata: std::fs::Metadata) -> time::Tm {
     return time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
 }
 
-pub fn get_helper(name: &str) -> Result<PathBuf, ()> {
-    let current_exe = match std::env::current_exe() {
-        Ok(path) => path,
-        Err(_) => return Err(())
+lazy_static! {
+    static ref CURRENT_EXE: PathBuf = {
+        std::env::current_exe().expect("Failed to get path to bum binary")
     };
+}
 
-    let dir = match current_exe.parent() {
+fn get_current_exe() -> &'static Path {
+    return &*CURRENT_EXE;
+}
+
+pub fn get_helper(name: &str) -> Result<PathBuf, ()> {
+    let dir = match get_current_exe().parent() {
         Some(path) => path,
         None => return Err(())
     };
 
     return Ok(dir.join(name));
+}
+
+pub fn init_get_helper() {
+    get_current_exe();
 }

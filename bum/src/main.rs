@@ -4,6 +4,7 @@ extern crate bum_rpc;
 #[macro_use] extern crate clap;
 extern crate hyper;
 extern crate image;
+#[macro_use] extern crate lazy_static;
 extern crate libc;
 #[macro_use] extern crate log;
 extern crate queryst;
@@ -287,6 +288,7 @@ impl web::Handler for AlbumListHandler {
 
 fn main() {
     simple_logger::init_with_level(log::LogLevel::Info).unwrap();
+    util::init_get_helper();
 
     // Pledge ourselves to limit our exploitable surface area.
     match pledge![Stdio, RPath, Inet, Proc, Exec] {
