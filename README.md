@@ -15,5 +15,6 @@ To compile Bum from source, you need the following:
 * GStreamer 1.0
 
 Build and start Bum in the following way:
+
     cargo build --release
     ./target/release/bum -m ~/Music
