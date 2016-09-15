@@ -1,27 +1,9 @@
 use std::os::unix::fs::MetadataExt;
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std;
 
 use hyper::mime;
-use libc;
 use time;
-
-pub fn canonicalize(raw_path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
-    let path = try!(std::ffi::CString::new(raw_path.as_os_str().as_bytes()));
-    let buf;
-
-    unsafe {
-        let r = libc::realpath(path.as_ptr(), std::ptr::null_mut());
-        if r.is_null() {
-            return Err(std::io::Error::last_os_error());
-        }
-        buf = std::ffi::CStr::from_ptr(r).to_bytes().to_vec();
-        libc::free(r as *mut _);
-    }
-    Ok(std::path::PathBuf::from(std::ffi::OsString::from_vec(buf)))
-}
 
 pub fn path_to_mimetype(path: &Path) -> mime::Mime {
     let mut mimetype = mime::Mime(mime::TopLevel::Application,

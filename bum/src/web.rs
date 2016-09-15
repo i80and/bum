@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::{Read, Write};
 use std;
 
@@ -177,7 +178,7 @@ pub fn serve_file(mut path: std::path::PathBuf,
 
 impl StaticHandler {
     pub fn new<P: AsRef<std::path::Path>>(root: P) -> StaticHandler {
-        let canonical_root = util::canonicalize(root.as_ref()).unwrap();
+        let canonical_root = fs::canonicalize(root.as_ref()).unwrap();
         return StaticHandler { root: std::sync::Arc::new(canonical_root) };
     }
 }
@@ -191,7 +192,7 @@ impl Handler for StaticHandler {
         let mut path = (*self.root).clone();
         path.push(raw_path);
 
-        let path = match util::canonicalize(&path) {
+        let path = match fs::canonicalize(&path) {
             Ok(p) => p,
             Err(_) => {
                 *res.status_mut() = hyper::status::StatusCode::NotFound;
