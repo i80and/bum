@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
+extern crate argparse;
 extern crate bum_rpc;
-#[macro_use] extern crate clap;
 extern crate hyper;
 extern crate image;
 #[macro_use] extern crate lazy_static;
@@ -298,21 +298,26 @@ fn main() {
         _ => panic!("Failed to pledge daemon")
     }
 
-    let matches = clap::App::new("bum")
-        .version(&crate_version!()[..])
-        .author("Andrew Aldridge <i80and@foxquill.com>")
-        .about("Start the bum media server.")
-        .args_from_usage("-m --media=[PATH] 'Set the path to search for media [default: ./]'
-                               \
-                          -l --listen=[HOST] 'Set the host to listen on [default: \
-                          127.0.0.1:8080]'")
-        .get_matches();
+    let mut media_path = ".".to_owned();
+    let mut listen_host = "127.0.0.1:8080".to_owned();
 
-    let media_path = match matches.value_of("media") {
-        Some(p) => std::path::PathBuf::from(p),
-        None => std::env::current_dir().unwrap(),
-    };
-    let host = matches.value_of("listen").unwrap_or("127.0.0.1:8080");
+    {
+        let mut ap = argparse::ArgumentParser::new();
+        ap.set_description("Start the bum media server.");
+        ap.add_option(&["-V", "--version"],
+            argparse::Print(env!("CARGO_PKG_VERSION").to_owned()), "Show version");
+        ap.refer(&mut media_path)
+                .add_option(&["-m", "--media"], argparse::Store,
+                    "Set the path to search for media")
+                .metavar("PATH");
+        ap.refer(&mut listen_host)
+                .add_option(&["-l", "--listen"], argparse::Store,
+                    "Set the host to listen on")
+                .metavar("HOST");
+        ap.parse_args_or_exit();
+    }
+
+    let media_path = std::path::PathBuf::from(media_path);
 
     let (db, db_errors) = media::MediaDatabase::load(&media_path);
     for error in db_errors {
@@ -337,8 +342,8 @@ fn main() {
                      r"/(.*)",
                      web::StaticHandler::new("../client/build"));
 
-    info!("Preparing to listen on {}", host);
-    match web::listen(host, router) {
+    info!("Preparing to listen on {}", listen_host);
+    match web::listen(&listen_host, router) {
         Err(msg) => error!("Failed to start server: {}", msg),
         _ => (),
     }
