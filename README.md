@@ -8,7 +8,7 @@ Installation
 
 To compile Bum from source, you need the following:
 * OpenBSD (recommended), Linux, or OS X
-* Rust 1.9.0 or later
+* Rust 1.13.0 or later
 * TagLib
 * GStreamer 1.0
 
