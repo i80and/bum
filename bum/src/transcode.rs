@@ -49,16 +49,14 @@ impl Transcoder {
             Err(s) => return Err(format!("Error starting transcode helper: {}", s.description())),
         };
 
-        return Ok(Transcoder {
+        Ok(Transcoder {
             child: child
-        });
+        })
     }
 
     pub fn read(&mut self, mut buf: &mut [u8]) -> usize {
         let stdout = self.child.stdout.as_mut().unwrap();
-        let bytes_read = stdout.read(&mut buf).unwrap();
-
-        return bytes_read;
+        stdout.read(&mut buf).unwrap()
     }
 }
 

@@ -19,14 +19,14 @@ pub struct Args<'a> {
 
 impl<'a> Args<'a> {
     pub fn new(args: &'a regex::Captures, query: &'a serde_json::Value) -> Args<'a> {
-        return Args {
+        Args {
             args: args,
             query: query,
-        };
+        }
     }
 
     pub fn at(&self, i: usize) -> Option<&'a str> {
-        return self.args.at(i);
+        self.args.at(i)
     }
 
     pub fn param(&self, name: &str) -> Option<&'a str> {
@@ -35,7 +35,7 @@ impl<'a> Args<'a> {
             None => return None,
         };
 
-        return val.as_str();
+        val.as_str()
     }
 
     pub fn param_i64(&self, name: &str) -> Option<i64> {
@@ -44,10 +44,10 @@ impl<'a> Args<'a> {
             None => return None,
         };
 
-        return match val.parse::<i64>() {
+        match val.parse::<i64>() {
             Ok(v) => Some(v),
             Err(_) => None,
-        };
+        }
     }
 }
 
@@ -122,7 +122,7 @@ pub fn should_serve_file(mtime: time::Tm,
 
     res.headers_mut().set(LastModified(HttpDate(mtime)));
 
-    return should_send;
+    should_send
 }
 
 pub fn serve_file(mut path: std::path::PathBuf,
@@ -177,7 +177,7 @@ pub fn serve_file(mut path: std::path::PathBuf,
 impl StaticHandler {
     pub fn new<P: AsRef<std::path::Path>>(root: P) -> StaticHandler {
         let canonical_root = fs::canonicalize(root.as_ref()).unwrap();
-        return StaticHandler { root: std::sync::Arc::new(canonical_root) };
+        StaticHandler { root: std::sync::Arc::new(canonical_root) }
     }
 }
 
@@ -204,7 +204,7 @@ impl Handler for StaticHandler {
             return;
         }
 
-        return serve_file(path, req, res);
+        serve_file(path, req, res)
     }
 }
 
@@ -223,5 +223,5 @@ pub fn listen<T: 'static + hyper::server::Handler>(address: &str,
                                                    -> Result<(), hyper::error::Error> {
     let server = try!(hyper::server::Server::http(address));
     try!(server.handle(router));
-    return Ok(());
+    Ok(())
 }

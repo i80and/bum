@@ -57,11 +57,11 @@ impl Cover {
         let mut buf = vec![];
         try!(file.read_to_end(&mut buf));
 
-        return Ok(Cover {
+        Ok(Cover {
             data: buf,
             mimetype: mimetype,
             mtime: mtime
-        });
+        })
     }
 
     pub fn resize(&self) -> Result<Cover, String> {
@@ -75,20 +75,20 @@ impl Cover {
                            parsed.color()).unwrap();
         }
 
-        return Ok(Cover {
+        Ok(Cover {
             data: output_buf,
             mimetype: mime::Mime(mime::TopLevel::Image,
                                  mime::SubLevel::Jpeg,
                                  vec![]),
             mtime: self.mtime
-        });
+        })
     }
 
     pub fn servable(&self) -> bool {
         if self.data.len() > 50000 { return false; }
-        return self.mimetype == mime::Mime(mime::TopLevel::Image,
+        self.mimetype == mime::Mime(mime::TopLevel::Image,
                                     mime::SubLevel::Jpeg,
-                                    vec![]);
+                                    vec![])
     }
 }
 
@@ -173,7 +173,7 @@ impl MediaDatabase {
                     std::cmp::Ordering::Equal => (),
                     c => return c.reverse(),
                 }
-                return a.track.cmp(&b.track).reverse();
+                a.track.cmp(&b.track).reverse()
             });
 
             db.insert_album(songs, prefix);
@@ -189,11 +189,11 @@ impl MediaDatabase {
             }
         });
 
-        return (db, errors);
+        (db, errors)
     }
 
     pub fn get_song<'a>(&'a self, song_id: &str) -> Option<&'a Song> {
-        return self.songs.get(song_id);
+        self.songs.get(song_id)
     }
 
     pub fn get_album_by_song<'a>(&'a self, song_id: &str) -> Option<&'a Album> {
@@ -202,23 +202,23 @@ impl MediaDatabase {
             None => return None,
         };
 
-        return self.albums.get(album_id);
+        self.albums.get(album_id)
     }
 
     pub fn songs(&self) -> std::collections::btree_map::Values<SongID, Song> {
-        return self.songs.values();
+        self.songs.values()
     }
 
     pub fn get_album<'a>(&'a self, album_id: &str) -> Option<&'a Album> {
-        return self.albums.get(album_id);
+        self.albums.get(album_id)
     }
 
     pub fn albums(&self) -> std::collections::hash_map::Values<AlbumID, Album> {
-        return self.albums.values();
+        self.albums.values()
     }
 
     pub fn get_tagparser(&self) -> MutexGuard<tagparser::Server> {
-        return self.tagparser.lock().unwrap();
+        self.tagparser.lock().unwrap()
     }
 
     fn parse_song(&mut self, path: &std::path::Path) -> Result<Song, String> {
@@ -261,7 +261,7 @@ impl MediaDatabase {
                          track,
                          disc);
 
-        return Ok(Song {
+        Ok(Song {
             id: id,
             title: String::from(title),
             album_title: String::from(album_title),
@@ -270,7 +270,7 @@ impl MediaDatabase {
             artist: String::from(artist),
             year: year,
             path: PathBuf::from(path),
-        });
+        })
     }
 
     fn insert_album(&mut self, mut songs: Vec<Song>, prefix: &std::path::Path) {
@@ -336,10 +336,10 @@ impl MediaDatabase {
             .filter_map(|candidate| {
                 let mut cover_path = PathBuf::from(prefix);
                 cover_path.push(candidate);
-                return match std::fs::metadata(&cover_path) {
+                match std::fs::metadata(&cover_path) {
                     Ok(_) => Some(cover_path),
                     Err(_) => None,
-                };
+                }
             })
             .next();
 
@@ -356,10 +356,10 @@ impl MediaDatabase {
             };
 
             let song_path = self.get_song(track).unwrap().path.clone();
-            return match self.get_tagparser().load_cover(&song_path) {
+            match self.get_tagparser().load_cover(&song_path) {
                 Ok(cover) => Some(cover),
                 Err(_) => None,
-            };
+            }
         });
 
         let album = Album {

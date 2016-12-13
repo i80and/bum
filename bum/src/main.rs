@@ -49,7 +49,7 @@ impl<'a> ToJson for SongListEntry<'a> {
         d.insert("artist".to_string(), self.artist.to_json());
         d.insert("album".to_string(), self.album_id.to_json());
 
-        return Value::Object(d);
+        Value::Object(d)
     }
 }
 
@@ -60,7 +60,7 @@ impl<'a> ToJson for media::Song {
         d.insert("title".to_string(), self.title.to_json());
         d.insert("artist".to_string(), self.artist.to_json());
 
-        return Value::Object(d);
+        Value::Object(d)
     }
 }
 
@@ -75,7 +75,7 @@ impl ToJson for media::Album {
         d.insert("tracks".to_string(), self.tracks.to_json());
         d.insert("cover".to_string(), self.cover.is_some().to_json());
 
-        return Value::Object(d);
+        Value::Object(d)
     }
 }
 
@@ -85,7 +85,7 @@ struct SongHandler {
 
 impl SongHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> SongHandler {
-        return SongHandler { db: db.clone() };
+        SongHandler { db: db.clone() }
     }
 
     fn handle_metadata(&self, song: &media::Song, mut res: hyper::server::Response) {
@@ -142,17 +142,17 @@ impl web::Handler for SongHandler {
         };
 
         match component {
-            "metadata" => return self.handle_metadata(song, res),
+            "metadata" => self.handle_metadata(song, res),
             "stream" => {
                 let quality = match args.param_i64("quality") {
                     Some(i) => transcode::Quality::from_int(i),
                     None => transcode::Quality::Medium,
                 };
 
-                return self.handle_stream(song, quality, res);
-            }
+                self.handle_stream(song, quality, res)
+            },
             _ => panic!("Unknown component {}", component),
-        };
+        }
     }
 }
 
@@ -162,7 +162,7 @@ struct SongListHandler {
 
 impl SongListHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> SongListHandler {
-        return SongListHandler { db: db.clone() };
+        SongListHandler { db: db.clone() }
     }
 }
 
@@ -197,7 +197,7 @@ struct AlbumHandler {
 
 impl AlbumHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> AlbumHandler {
-        return AlbumHandler { db: db.clone() };
+        AlbumHandler { db: db.clone() }
     }
 
     fn handle_metadata(&self, album: &media::Album, mut res: hyper::server::Response) {
@@ -259,11 +259,11 @@ impl web::Handler for AlbumHandler {
         };
 
         match component {
-            "metadata" => return self.handle_metadata(album, res),
-            "cover" => return self.handle_cover(album, req, res, false),
-            "thumbnail" => return self.handle_cover(album, req, res, true),
+            "metadata" => self.handle_metadata(album, res),
+            "cover" => self.handle_cover(album, req, res, false),
+            "thumbnail" => self.handle_cover(album, req, res, true),
             _ => panic!("Unknown component {}", component),
-        };
+        }
     }
 }
 

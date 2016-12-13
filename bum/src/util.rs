@@ -27,11 +27,11 @@ pub fn path_to_mimetype(path: &Path) -> mime::Mime {
         }
     }
 
-    return mimetype;
+    mimetype
 }
 
 pub fn mtime(metadata: std::fs::Metadata) -> time::Tm {
-    return time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32));
+    time::at(time::Timespec::new(metadata.mtime(), metadata.mtime_nsec() as i32))
 }
 
 lazy_static! {
@@ -41,7 +41,7 @@ lazy_static! {
 }
 
 fn get_current_exe() -> &'static Path {
-    return &*CURRENT_EXE;
+    &*CURRENT_EXE
 }
 
 pub fn get_helper(name: &str) -> Result<PathBuf, ()> {
@@ -50,7 +50,7 @@ pub fn get_helper(name: &str) -> Result<PathBuf, ()> {
         None => return Err(())
     };
 
-    return Ok(dir.join(name));
+    Ok(dir.join(name))
 }
 
 pub fn init_get_helper() {

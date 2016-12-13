@@ -19,31 +19,31 @@ pub struct Tags {
 
 impl Tags {
     pub fn title(&self) -> Option<&str> {
-        return match self.tags.get("TITLE") {
+        match self.tags.get("TITLE") {
             Some(s) => Some(s),
             None => None,
-        };
+        }
     }
 
     pub fn artist(&self) -> Option<&str> {
-        return match self.tags.get("ARTIST") {
+        match self.tags.get("ARTIST") {
             Some(s) => Some(s),
             None => None,
-        };
+        }
     }
 
     pub fn album(&self) -> Option<&str> {
-        return match self.tags.get("ALBUM") {
+        match self.tags.get("ALBUM") {
             Some(s) => Some(s),
             None => None,
-        };
+        }
     }
 
     pub fn year(&self) -> Option<u32> {
-        return match self.tags.get("DATE") {
+        match self.tags.get("DATE") {
             Some(s) => s.parse::<u32>().ok().and_then(Some),
             None => None,
-        };
+        }
     }
 
     pub fn track(&self) -> (Option<u32>, Option<u32>) {
@@ -63,7 +63,7 @@ impl Tags {
             None => None,
         };
 
-        return (cur_track, n_tracks);
+        (cur_track, n_tracks)
     }
 
     pub fn disc(&self) -> (Option<u32>, Option<u32>) {
@@ -83,7 +83,7 @@ impl Tags {
             None => None,
         };
 
-        return (cur_disc, n_discs);
+        (cur_disc, n_discs)
     }
 }
 
@@ -100,13 +100,13 @@ impl Server {
             .stdin(process::Stdio::piped())
             .spawn();
 
-        return match child {
+        match child {
             Ok(c) =>  Ok(Server {
                 rpc: bum_rpc::RPCInterface::new(io::BufReader::new(c.stdout.unwrap())),
                 child_stdin: c.stdin.unwrap()
             }),
             Err(s) => Err(format!("Error starting tagparser helper: {}", s.description())),
-        };
+        }
     }
 
     pub fn load_tags(&mut self, path: &Path) -> Result<Tags, String> {
@@ -140,9 +140,9 @@ impl Server {
                     tags: hashmap
                 })
             }
-            Some(resp::Value::Error(msg)) => return Err(msg),
+            Some(resp::Value::Error(msg)) => Err(msg),
             None => Err("No response from tagserver".to_owned()),
-            _ => return Err("Bad response from tagserver".to_owned()),
+            _ => Err("Bad response from tagserver".to_owned()),
         }
     }
 
@@ -179,15 +179,15 @@ impl Server {
                     Err(_) => time::now_utc()
                 };
 
-                return Ok(Cover {
+                Ok(Cover {
                     mimetype: mimetype,
                     data: data,
                     mtime: mtime,
-                });
+                })
             }
-            Some(resp::Value::Error(msg)) => return Err(msg),
+            Some(resp::Value::Error(msg)) => Err(msg),
             None => Err("No response from tagserver loading cover".to_owned()),
-            _ => return Err("Bad response from tagserver".to_owned())
+            _ => Err("Bad response from tagserver".to_owned())
         }
     }
 }
