@@ -52,10 +52,10 @@ pub struct Cover {
 impl Cover {
     fn from_file(path: &Path) -> Result<Cover, std::io::Error> {
         let mimetype = util::path_to_mimetype(path);
-        let mtime = util::mtime(try!(std::fs::metadata(path)));
-        let mut file = try!(std::fs::File::open(&path));
+        let mtime = util::mtime(std::fs::metadata(path)?);
+        let mut file = std::fs::File::open(&path)?;
         let mut buf = vec![];
-        try!(file.read_to_end(&mut buf));
+        file.read_to_end(&mut buf)?;
 
         Ok(Cover {
             data: buf,

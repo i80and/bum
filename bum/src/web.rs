@@ -221,7 +221,7 @@ impl hyper::server::Handler for Router {
 pub fn listen<T: 'static + hyper::server::Handler>(address: &str,
                                                    router: T)
                                                    -> Result<(), hyper::error::Error> {
-    let server = try!(hyper::server::Server::http(address));
-    try!(server.handle(router));
+    let server = hyper::server::Server::http(address)?;
+    server.handle(router)?;
     Ok(())
 }
