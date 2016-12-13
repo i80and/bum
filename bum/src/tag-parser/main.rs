@@ -10,11 +10,11 @@ use libc::{size_t, c_char, c_int};
 
 fn convert_c_string(c_str: *const c_char) -> Result<String, std::str::Utf8Error> {
     if c_str.is_null() {
-        return Ok(String::new());
+        Ok(String::new())
     } else {
         let bytes = unsafe { CStr::from_ptr(c_str) };
-        let str = String::from(try!(std::str::from_utf8(bytes.to_bytes())));
-        return Ok(str);
+        let str = String::from(std::str::from_utf8(bytes.to_bytes())?);
+        Ok(str)
     }
 }
 
@@ -41,7 +41,7 @@ struct Image(RawImage);
 
 impl Image {
     fn new(inner: RawImage) -> Image {
-        return Image(inner);
+        Image(inner)
     }
 
     fn load(path: &str) -> Result<Image, ()> {
@@ -53,21 +53,21 @@ impl Image {
         };
 
         unsafe {
-            return match taglib_get_cover(path_str.as_ptr(), &mut image) {
+            match taglib_get_cover(path_str.as_ptr(), &mut image) {
                 0 => Ok(Image::new(image)),
                 _ => Err(()),
-            };
+            }
         }
     }
 
     fn as_slice(&self) -> &[u8] {
         let &Image(ref raw) = self;
-        return unsafe { std::slice::from_raw_parts(raw.data, raw.len as usize) };
+        unsafe { std::slice::from_raw_parts(raw.data, raw.len as usize) }
     }
 
     fn get_mime_type(&self) -> Result<String, std::str::Utf8Error> {
         let &Image(ref raw) = self;
-        return convert_c_string(raw.mime_type);
+        convert_c_string(raw.mime_type)
     }
 
     fn as_resp(&self) -> Result<resp::Value, ()> {
@@ -77,7 +77,7 @@ impl Image {
         };
         let data = resp::Value::BufBulk(self.as_slice().to_owned());
         let body = vec![mimetype, data];
-        return Ok(resp::Value::Array(body));
+        Ok(resp::Value::Array(body))
     }
 }
 
@@ -123,7 +123,7 @@ fn load_tags(path: &str) -> Result<Vec<(String, String)>, ()> {
 
         taglib_free(properties);
 
-        return Ok(result);
+        Ok(result)
     }
 }
 
@@ -136,9 +136,9 @@ fn main() {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     let mut rpc = bum_rpc::RPCInterface::new(stdin.lock());
-    rpc.read_loop(|ref command, ref args| {
+    rpc.read_loop(|command, args| {
         let result = match command {
-            &"tags" => {
+            "tags" => {
                 let path = match args.get(0) {
                     Some(&resp::Value::String(ref path)) => path,
                     _ => panic!("Illegal tags request")
@@ -154,7 +154,7 @@ fn main() {
                     }
                 }
             },
-            &"cover" => {
+            "cover" => {
                 let path = match args.get(0) {
                     Some(&resp::Value::String(ref path)) => path,
                     _ => panic!("Illegal cover request")

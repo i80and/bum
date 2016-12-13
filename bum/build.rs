@@ -5,7 +5,6 @@ fn get_builder() -> gcc::Config {
     let mut builder = gcc::Config::new();
     builder.flag("-Wall");
     builder.flag("-Wextra");
-    builder.flag("-Werror");
     builder.flag("-Wshadow");
     builder.flag("-Wno-unused-parameter");
 
