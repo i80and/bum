@@ -18,21 +18,21 @@ pub struct Tags {
 }
 
 impl Tags {
-    pub fn title<'a>(&'a self) -> Option<&'a str> {
+    pub fn title(&self) -> Option<&str> {
         return match self.tags.get("TITLE") {
             Some(s) => Some(s),
             None => None,
         };
     }
 
-    pub fn artist<'a>(&'a self) -> Option<&'a str> {
+    pub fn artist(&self) -> Option<&str> {
         return match self.tags.get("ARTIST") {
             Some(s) => Some(s),
             None => None,
         };
     }
 
-    pub fn album<'a>(&'a self) -> Option<&'a str> {
+    pub fn album(&self) -> Option<&str> {
         return match self.tags.get("ALBUM") {
             Some(s) => Some(s),
             None => None,
@@ -41,12 +41,12 @@ impl Tags {
 
     pub fn year(&self) -> Option<u32> {
         return match self.tags.get("DATE") {
-            Some(s) => s.parse::<u32>().ok().and_then(|t| Some(t)),
+            Some(s) => s.parse::<u32>().ok().and_then(Some),
             None => None,
         };
     }
 
-    pub fn track<'a>(&'a self) -> (Option<u32>, Option<u32>) {
+    pub fn track(&self) -> (Option<u32>, Option<u32>) {
         let track_str = match self.tags.get("TRACKNUMBER") {
             Some(s) => s,
             None => return (None, None),
@@ -54,19 +54,19 @@ impl Tags {
 
         let mut tracks = track_str.split('/').take(2);
         let cur_track = match tracks.next() {
-            Some(s) => s.parse::<u32>().ok().and_then(|t| Some(t)),
+            Some(s) => s.parse::<u32>().ok().and_then(Some),
             None => None,
         };
 
         let n_tracks = match tracks.next() {
-            Some(s) => s.parse::<u32>().ok().and_then(|t| Some(t)),
+            Some(s) => s.parse::<u32>().ok().and_then(Some),
             None => None,
         };
 
         return (cur_track, n_tracks);
     }
 
-    pub fn disc<'a>(&'a self) -> (Option<u32>, Option<u32>) {
+    pub fn disc(&self) -> (Option<u32>, Option<u32>) {
         let disc_str = match self.tags.get("DISCNUMBER") {
             Some(s) => s,
             None => return (None, None),
@@ -74,12 +74,12 @@ impl Tags {
 
         let mut discs = disc_str.split('/').take(2);
         let cur_disc = match discs.next() {
-            Some(s) => s.parse::<u32>().ok().and_then(|t| Some(t)),
+            Some(s) => s.parse::<u32>().ok().and_then(Some),
             None => None,
         };
 
         let n_discs = match discs.next() {
-            Some(s) => s.parse::<u32>().ok().and_then(|t| Some(t)),
+            Some(s) => s.parse::<u32>().ok().and_then(Some),
             None => None,
         };
 
@@ -124,7 +124,7 @@ impl Server {
                 for element in array {
                     let element = match bum_rpc::value_to_string(element) {
                         Ok(s) => s,
-                        Err(_) => return Err(format!("Bad response from tagserver"))
+                        Err(_) => return Err("Bad response from tagserver".to_owned())
                     };
 
                     let pos = match element.find(':') {
@@ -141,8 +141,8 @@ impl Server {
                 })
             }
             Some(resp::Value::Error(msg)) => return Err(msg),
-            None => Err(format!("No response from tagserver")),
-            _ => return Err(format!("Bad response from tagserver"))
+            None => Err("No response from tagserver".to_owned()),
+            _ => return Err("Bad response from tagserver".to_owned()),
         }
     }
 

@@ -146,15 +146,15 @@ impl MediaDatabase {
                 None => continue,
             };
 
-            if MUSIC_EXTENSIONS.iter().find(|e| **e == extension).is_some() {
+            if MUSIC_EXTENSIONS.iter().any(|e| *e == extension) {
                 let album_prefix = PathBuf::from(path.parent().unwrap());
-                let mut songs = song_prefixes.entry(album_prefix).or_insert(vec![]);
+                let mut songs = song_prefixes.entry(album_prefix).or_insert_with(|| vec![]);
                 songs.push(PathBuf::from(&path));
             }
         }
 
         // Associate songs with albums
-        for (prefix, song_paths) in song_prefixes.iter() {
+        for (prefix, song_paths) in &song_prefixes {
             let mut songs: Vec<Song> = song_paths.iter()
                 .filter_map(|path| {
                     match db.parse_song(path) {
@@ -182,7 +182,7 @@ impl MediaDatabase {
         // Generate thumbnails
         let mut pool = scoped_threadpool::Pool::new(num_cpus::get() as u32);
         pool.scoped(|scoped| {
-            for (_, album) in db.albums.iter_mut() {
+            for (_, album) in &mut db.albums {
                 scoped.execute(move || {
                     album.generate_thumbnail();
                 })
@@ -222,7 +222,7 @@ impl MediaDatabase {
     }
 
     fn parse_song(&mut self, path: &std::path::Path) -> Result<Song, String> {
-        let tags = match self.get_tagparser().load_tags(&path) {
+        let tags = match self.get_tagparser().load_tags(path) {
             Ok(t) => t,
             Err(msg) => {
                 return Err(format!("Failed to parse file \"{}\": {}", path.display(), msg))
@@ -251,7 +251,7 @@ impl MediaDatabase {
         let (disc, _) = tags.disc();
         let disc = disc.unwrap_or(0);
 
-        let mut hasher = std::hash::SipHasher::new();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
         artist.hash(&mut hasher);
         title.hash(&mut hasher);
 
@@ -304,7 +304,7 @@ impl MediaDatabase {
         // Find the artist with majority status in this album
         let threshold = tracks.len() as u32 / 2;
         let mut album_artist = None;
-        for (artist, n) in album_artists.iter() {
+        for (artist, n) in &album_artists {
             if *n >= threshold {
                 album_artist = Some(artist.clone());
                 break;
@@ -316,10 +316,10 @@ impl MediaDatabase {
             None => String::from("Various Artists"),
         };
 
-        let mut artist_hasher = std::hash::SipHasher::new();
+        let mut artist_hasher = std::collections::hash_map::DefaultHasher::new();
         album_artist.hash(&mut artist_hasher);
 
-        let mut title_hasher = std::hash::SipHasher::new();
+        let mut title_hasher = std::collections::hash_map::DefaultHasher::new();
         title.hash(&mut title_hasher);
 
         let album_id = format!("{}-{}-{}",
@@ -327,7 +327,7 @@ impl MediaDatabase {
                                title_hasher.finish(),
                                tracks.len());
 
-        for song_id in tracks.iter() {
+        for song_id in &tracks {
             self.index_song_album.insert(song_id.clone(), album_id.clone());
         }
 

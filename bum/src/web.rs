@@ -5,6 +5,7 @@ use std;
 use regex;
 use queryst;
 use hyper;
+use hyper::header::{IfModifiedSince, HttpDate, LastModified, ContentLength, ContentType};
 use url;
 use time;
 use util;
@@ -51,7 +52,7 @@ impl<'a> Args<'a> {
 }
 
 pub trait Handler {
-    fn handle(&self, req: &hyper::server::Request, mut res: hyper::server::Response, args: &Args);
+    fn handle(&self, req: &hyper::server::Request, res: hyper::server::Response, args: &Args);
 }
 
 pub struct Router {
@@ -96,7 +97,7 @@ impl Router {
             };
 
             // Found! Parse the query string, and dispatch.
-            let parsed_query = queryst::parse(&query).unwrap();
+            let parsed_query = queryst::parse(query).unwrap();
             let args = Args::new(&captures, &parsed_query);
             return handler.handle(req, res, &args);
         }
@@ -115,14 +116,11 @@ pub fn should_serve_file(mtime: time::Tm,
                          -> bool {
     // Check the If-Modified-Since against our mtime
     let mut should_send = true;
-    match req.headers.get::<hyper::header::IfModifiedSince>() {
-        Some(&hyper::header::IfModifiedSince(hyper::header::HttpDate(query))) => {
-            should_send = query < mtime;
-        }
-        _ => (),
+    if let Some(&IfModifiedSince(HttpDate(query))) = req.headers.get::<IfModifiedSince>() {
+        should_send = query < mtime;
     }
 
-    res.headers_mut().set(hyper::header::LastModified(hyper::header::HttpDate(mtime)));
+    res.headers_mut().set(LastModified(HttpDate(mtime)));
 
     return should_send;
 }
@@ -152,9 +150,9 @@ pub fn serve_file(mut path: std::path::PathBuf,
         }
     };
 
-    res.headers_mut().set(hyper::header::ContentLength(metadata.len()));
+    res.headers_mut().set(ContentLength(metadata.len()));
     let mimetype = util::path_to_mimetype(&path);
-    res.headers_mut().set(hyper::header::ContentType(mimetype));
+    res.headers_mut().set(ContentType(mimetype));
 
     if !should_serve_file(util::mtime(metadata), req, &mut res) {
         *res.status_mut() = hyper::status::StatusCode::NotModified;

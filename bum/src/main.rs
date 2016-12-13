@@ -225,12 +225,13 @@ impl AlbumHandler {
         }
 
         // Serve a thumbnail if requested and possible
-        let cover = match thumbnail {
-            true => match album.thumbnail {
+        let cover = if thumbnail {
+            match album.thumbnail {
                 Some(ref new_cover) => new_cover,
                 None => cover
-            },
-            _ => cover
+            }
+        } else {
+            cover
         };
 
         res.headers_mut().set(hyper::header::ContentLength(cover.data.len() as u64));
@@ -272,7 +273,7 @@ struct AlbumListHandler {
 
 impl AlbumListHandler {
     fn new(db: &std::sync::Arc<media::MediaDatabase>) -> AlbumListHandler {
-        return AlbumListHandler { db: db.clone() };
+        AlbumListHandler { db: db.clone() }
     }
 }
 
@@ -343,8 +344,7 @@ fn main() {
                      web::StaticHandler::new("../client/build"));
 
     info!("Preparing to listen on {}", listen_host);
-    match web::listen(&listen_host, router) {
-        Err(msg) => error!("Failed to start server: {}", msg),
-        _ => (),
+    if let Err(msg) = web::listen(&listen_host, router) {
+        error!("Failed to start server: {}", msg);
     }
 }

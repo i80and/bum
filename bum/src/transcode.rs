@@ -23,10 +23,10 @@ impl Quality {
     }
 
     pub fn to_int(&self) -> i8 {
-        match self {
-            &Quality::Low => 0,
-            &Quality::Medium => 1,
-            &Quality::High => 2,
+        match *self {
+            Quality::Low => 0,
+            Quality::Medium => 1,
+            Quality::High => 2,
         }
     }
 }
