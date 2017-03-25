@@ -3,10 +3,11 @@
   "version": "0.0.0",
   "author": "Andrew Aldridge <i80and@foxquill.com>",
   "private": true,
-  "devDependencies": {
-    "rollup": "^0.34.13",
-    "rollup-plugin-typescript": "^0.8.1",
-    "rollup-plugin-uglify": "^1.0.1",
-    "uglify-js": "https://github.com/mishoo/UglifyJS2.git#1db50c3b169ee4195e1935013d6721628eb5b4bd"
+
+  "greniConfig": {
+    "entryPoints": {
+        "app.js": "src/main.js"
+    },
+    "output": "build"
   }
 }

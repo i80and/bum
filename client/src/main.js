@@ -3,16 +3,7 @@ import * as media from './media'
 const EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP'
 
 class Player {
-    playing: media.Song
-    paused: media.Song
-
-    element: HTMLAudioElement
-    library: media.MediaLibrary
-    playlist: media.Song[]
-
-    onplay: ()=>void
-
-    constructor(library: media.MediaLibrary) {
+    constructor(library) {
         this.playing = null
         this.paused = null
         this.library = library
@@ -22,7 +13,7 @@ class Player {
         this._initElement()
     }
 
-    play(songs: media.Song[]) {
+    play(songs) {
         this.playlist = songs.reverse()
         this.doPlay()
     }
@@ -76,7 +67,7 @@ class Player {
         this.onplay()
     }
 
-    _initElement(): void {
+    _initElement() {
         this.element = document.createElement('audio')
         this.element.controls = false
 
@@ -93,31 +84,27 @@ class Player {
 }
 
 class CoverSwitcher {
-    elements: HTMLImageElement[]
-    curCover: Blob
-    cur: number
-
-    constructor(elements: HTMLImageElement[]) {
+    constructor(elements) {
         this.elements = elements.slice(0, 2)
         this.curCover = null
         this.cur = 0
     }
 
-    switch(data: Blob) {
-        if(data === this.curCover) { return }
+    switch(blob) {
+        if(blob === this.curCover) { return }
 
-        this.curCover = data
+        this.curCover = blob
 
         this.currentElement.classList.add('old')
         this.cur = (this.cur + 1) % 2
         this.currentElement.classList.remove('old')
 
-        if(data === null) {
+        if(blob === null) {
             this.currentElement.src = EMPTY_IMAGE
             return
         }
 
-        this.currentElement.src = URL.createObjectURL(data)
+        this.currentElement.src = URL.createObjectURL(blob)
     }
 
     get currentElement() {
@@ -126,14 +113,7 @@ class CoverSwitcher {
 }
 
 class AlbumsView {
-    root: HTMLElement
-    library: media.MediaLibrary
-    shown: boolean
-
-    onPlay: (songs: media.Song[]) => void
-    onShuffle: () => void
-
-    constructor(root: HTMLElement, library: media.MediaLibrary) {
+    constructor(root, library) {
         this.root = root
         this.shown = false
         this.library = library
@@ -142,18 +122,17 @@ class AlbumsView {
         this.onShuffle = () => {}
     }
 
-    setPlayer(player: Player): void {
+    setPlayer(player) {
         this.onPlay = (songs) => { player.play(songs) }
         this.onShuffle = () => { player.shuffle() }
     }
 
-    hide(): void {
+    hide() {
         this.root.innerHTML = ''
         this.shown = false
-        return
     }
 
-    toggle(): void {
+    toggle() {
         if(this.shown) {
             this.hide()
             return
@@ -189,7 +168,7 @@ class AlbumsView {
                     this.hide()
                 })
 
-                album.getThumbnail(this.library).then((blob: Blob) => {
+                album.getThumbnail(this.library).then((blob) => {
                     if(blob !== null) {
                         el.innerHTML = ''
                         el.style.backgroundImage = `url(${URL.createObjectURL(blob) })`
@@ -219,7 +198,7 @@ function main() {
     const skipButton = document.getElementById('skip-button')
     const labelElement = document.getElementById('caption')
 
-    const coverSwitcher = new CoverSwitcher(<HTMLImageElement[]>Array.from(document.getElementsByClassName('cover')))
+    const coverSwitcher = new CoverSwitcher(Array.from(document.getElementsByClassName('cover')))
     const library = new media.MediaLibrary('/api')
     const player = new Player(library)
 
@@ -231,9 +210,9 @@ function main() {
         if(song) {
             labelElement.textContent = `${song.artist} - ${song.title}`
 
-            library.getAlbumBySong(song.id).then((album: media.Album) => {
+            library.getAlbumBySong(song.id).then((album) => {
                 return album.getCover(library)
-            }).then((cover: Blob) => {
+            }).then((cover) => {
                 coverSwitcher.switch(cover)
             })
         } else {
