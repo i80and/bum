@@ -28,7 +28,7 @@ mod util;
 mod web;
 
 use std::io::Write;
-use pledge::{pledge, Promise};
+use pledge::{pledge, Promise, ToPromiseString};
 use serde_json::value::ToJson;
 use serde_json::value::Value;
 use hyper::mime;

@@ -3,7 +3,7 @@ extern crate resp;
 extern crate bum_rpc;
 
 #[macro_use] extern crate pledge;
-use pledge::{pledge, Promise};
+use pledge::{pledge, Promise, ToPromiseString};
 
 use std::ffi::{CString, CStr};
 use libc::{size_t, c_char, c_int};
