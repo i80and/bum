@@ -1,4 +1,5 @@
 import * as media from './media'
+import AlbumsView from './components/AlbumsView.js'
 
 const EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP'
 
@@ -90,106 +91,25 @@ class CoverSwitcher {
         this.cur = 0
     }
 
-    switch(blob) {
-        if(blob === this.curCover) { return }
+    switch(url) {
+        if(url === this.curCover) { return }
 
-        this.curCover = blob
+        this.curCover = url
 
         this.currentElement.classList.add('old')
         this.cur = (this.cur + 1) % 2
         this.currentElement.classList.remove('old')
 
-        if(blob === null) {
+        if(url === null) {
             this.currentElement.src = EMPTY_IMAGE
             return
         }
 
-        this.currentElement.src = URL.createObjectURL(blob)
+        this.currentElement.src = url
     }
 
     get currentElement() {
         return this.elements[this.cur]
-    }
-}
-
-class AlbumsView {
-    constructor(root, library) {
-        this.root = root
-        this.shown = false
-        this.library = library
-
-        this.onPlay = () => {}
-        this.onShuffle = () => {}
-    }
-
-    setPlayer(player) {
-        this.onPlay = (songs) => { player.play(songs) }
-        this.onShuffle = () => { player.shuffle() }
-    }
-
-    hide() {
-        this.root.innerHTML = ''
-        this.shown = false
-    }
-
-    toggle() {
-        if(this.shown) {
-            this.hide()
-            return
-        }
-
-        this.shown = true
-        this.library.getAlbums().then((albums) => {
-            albums.sort((a, b) => { return a.compare(b) })
-            this.root.innerHTML = ''
-
-            // Add the "shuffle" entry
-            {
-                const el = document.createElement('div')
-                el.addEventListener('click', () => { this.onShuffle() })
-
-                const label = document.createElement('span')
-                label.className = 'fa fa-random'
-                label.title = 'Shuffle'
-
-                el.appendChild(label)
-                this.root.appendChild(el)
-            }
-
-            for(let curAlbum of albums) {
-                const el = document.createElement('div')
-                const album = curAlbum
-                el.addEventListener('click', () => {
-                    const songs = album.tracks.map((id) => {
-                        return this.library.getSong(id)
-                    })
-
-                    this.onPlay(songs)
-                    this.hide()
-                })
-
-                album.getThumbnail(this.library).then((blob) => {
-                    if(blob !== null) {
-                        el.innerHTML = ''
-                        el.style.backgroundImage = `url(${URL.createObjectURL(blob) })`
-                        el.style.backgroundColor = 'transparent'
-                    } else {
-                        const artistElement = document.createElement('div')
-                        const titleElement = document.createElement('div')
-
-                        artistElement.textContent = album.albumArtist
-                        titleElement.textContent = album.title
-
-                        el.appendChild(artistElement)
-                        el.appendChild(titleElement)
-                        el.style.backgroundImage = ''
-                    }
-
-                })
-
-                this.root.appendChild(el)
-            }
-        })
     }
 }
 
@@ -211,9 +131,7 @@ function main() {
             labelElement.textContent = `${song.artist} - ${song.title}`
 
             library.getAlbumBySong(song.id).then((album) => {
-                return album.getCover(library)
-            }).then((cover) => {
-                coverSwitcher.switch(cover)
+                coverSwitcher.switch(library.getCover(album))
             })
         } else {
             coverSwitcher.switch(null)
@@ -242,11 +160,27 @@ function main() {
     })
 
     const albumsButton = document.getElementById('albums-button')
-    const albumsList = document.getElementById('album-list')
-    const albumsView = new AlbumsView(albumsList, library)
-    albumsView.setPlayer(player)
+    const albumsView = new AlbumsView({
+        target: document.getElementById('album-list'),
+        data: { library }
+    })
+
+    albumsView.on('shuffle', () => {
+        player.shuffle()
+        albumsView.set({ show: false })
+    })
+
+    albumsView.on('select', (album) => {
+        const songs = album.tracks.map((id) => {
+            return library.getSong(id)
+        })
+
+        player.play(songs)
+        albumsView.set({ show: false })
+    })
+
     albumsButton.addEventListener('click', function() {
-        albumsView.toggle()
+        albumsView.set({ show: !albumsView.get('show') })
     })
 }
 

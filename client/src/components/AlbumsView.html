@@ -1,0 +1,75 @@
+{{ #if show }}
+<div class="album-list">
+    <div on:click="fire('shuffle')">
+        <span class="fa fa-random" title="Shuffle"></span>
+    </div>
+
+    {{ #each library.albums as album }}
+    <div on:click="fire('select', album)">
+    {{ #if album.haveCover }}
+        <img width=100 height=100 src="{{ library.getThumbnail(album) }}" alt="{{ album.albumArtist }} - {{ album.title }}">
+    {{ else }}
+        <div>{{ album.albumArtist }}</div>
+        <div>{{ album.title }}</div>
+    {{ /if }}
+    </div>
+    {{ /each }}
+</div>
+{{ /if }}
+
+<style>
+.album-list {
+    display: flex;
+    flex-wrap: wrap;
+    position: absolute;
+    top: 50px;
+}
+
+.album-list > div {
+    background-color: #444;
+    color: white;
+    font-size: 80%;
+    font-family: sans-serif;
+    width: 100px;
+    height: 100px;
+    background-size: cover;
+    margin-left: 2px;
+    margin-right: 2px;
+
+    cursor: pointer;
+    position: relative;
+    transition: all 0.25s;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+
+.album-list > div > div {
+    padding-top: 5px;
+    padding-bottom: 5px;
+    pointer-events: none;
+}
+
+.album-list > div:active { top: -6px; }
+
+.album-list > div:first-child {
+    font-size: 100%;
+    background-color: transparent;
+}
+</style>
+
+<script>
+export default {
+    data () {
+        return {
+            show: false
+        };
+    }
+};
+</script>

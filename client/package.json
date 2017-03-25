@@ -5,6 +5,7 @@
   "private": true,
 
   "greniConfig": {
+    "components": ["src/components/AlbumsView.html"],
     "entryPoints": {
         "app.js": "src/main.js"
     },

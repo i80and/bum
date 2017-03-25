@@ -28,44 +28,7 @@ export class Album {
         this.tracks = tracks
 
         this.haveCover = haveCover
-        this.cover = null
         this.thumbnail = null
-    }
-
-    getCover(library) {
-        if(!this.haveCover) {
-            return new Promise((resolve, reject) => { resolve(null) })
-        }
-
-        if(this.cover) {
-            return new Promise((resolve, reject) => { resolve(this.cover) })
-        }
-
-        return self.fetch(`${library.root}/music/album/${this.id}/cover`).then((response) => {
-            if(!response.ok) { return null }
-            return response.blob()
-        }).then((data) => {
-            this.cover = data
-            return data
-        })
-    }
-
-    getThumbnail(library) {
-        if(!this.haveCover) {
-            return new Promise((resolve, reject) => { resolve(null) })
-        }
-
-        if(this.thumbnail) {
-            return new Promise((resolve, reject) => { resolve(this.thumbnail) })
-        }
-
-        return self.fetch(`${library.root}/music/album/${this.id}/thumbnail`).then((response) => {
-            if(!response.ok) { return null }
-            return response.blob()
-        }).then((data) => {
-            this.thumbnail = data
-            return data
-        })
     }
 
     compare(other) {
@@ -139,8 +102,10 @@ export class MediaLibrary {
             }
 
             this.songs = songs
-            this.albums = Array.from(albums.keys())
             this.songCache = songCache
+            return this.getAlbums()
+        }).then((albums) => {
+            this.albums = albums
         }).catch((err) => {
             console.error('Invalid response from server', err)
         })
@@ -163,6 +128,14 @@ export class MediaLibrary {
         } else {
             return null
         }
+    }
+
+    getCover(album) {
+        return `${this.root}/music/album/${album.id}/cover`
+    }
+
+    getThumbnail(album) {
+        return `${this.root}/music/album/${album.id}/thumbnail`
     }
 
     getAlbums() {
