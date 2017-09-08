@@ -1,0 +1,34 @@
+# This file is generated automatically by Poet
+# from the poetry.toml configuration file.
+#
+# This file should not be modified directly.
+
+[root]
+name = "bum"
+version = "0.1.0"
+
+
+[[package]]
+name = "pypledge"
+version = "0.2.1"
+category = "main"
+optional = false
+checksum = [
+    "sha256:9e68dfccb49c9ac7908f62d7a12b62c66574f852cfd8adbba612eb09b5901853"
+]
+python = [
+    "*"
+]
+
+[[package]]
+name = "tornado"
+version = "4.5.2"
+category = "main"
+optional = false
+checksum = [
+    "sha256:1fb8e494cd46c674d86fac5885a3ff87b0e283937a47d74eb3c02a48c9e89ad0"
+]
+python = [
+    "*"
+]
+

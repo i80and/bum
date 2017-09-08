@@ -1,0 +1,15 @@
+[package]
+name = "bum"
+version = "0.1.0"
+description = "The Bum multimedia server."
+python = ["^3.5"]
+license = "AGPL-3.0+"
+authors = ["Andrew Aldridge <i80and@foxquill.com>"]
+readme = "README.rst"
+
+[dependencies]
+pypledge = "^0.2.1"
+tornado = "^4.5.2"
+
+[scripts]
+bumd = 'bum:main.run'
