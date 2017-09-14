@@ -2,7 +2,7 @@
 name = "bum"
 version = "0.1.0"
 description = "The Bum multimedia server."
-python = ["^3.5"]
+python = ["^3.6"]
 license = "AGPL-3.0+"
 authors = ["Andrew Aldridge <i80and@foxquill.com>"]
 readme = "README.rst"

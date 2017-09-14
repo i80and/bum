@@ -6,8 +6,8 @@
 
     {{ #each library.albums as album }}
     <div on:click="fire('select', album)">
-    {{ #if album.haveCover }}
-        <img width=100 height=100 src="{{ library.getThumbnail(album) }}" alt="{{ album.albumArtist }} - {{ album.title }}">
+    {{ #if library.thumbnails.has(album.id) }}
+        <img width=100 height=100 src="{{ library.thumbnails.get(album.id) }}" alt="{{ album.albumArtist }} - {{ album.title }}">
     {{ else }}
         <div>{{ album.albumArtist }}</div>
         <div>{{ album.title }}</div>

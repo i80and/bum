@@ -1,42 +1,31 @@
 #include <errno.h>
-#include <string.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libswresample/swresample.h>
+#include <libswscale/swscale.h>
 
-#ifdef INSECURE
-int pledge(const char* promises, const char* paths[]) {
-    errno = ENOSYS;
-    return 1;
-}
-#endif
+#include <jpeglib.h>
+#include <blake2.h>
 
-static inline void __warn(const char* file, int line, const char* func, const char* text) {
-    fprintf(stderr, "Assertion failed: %s:%d (%s): %s\n", file, line, func, text);
-    if (errno != 0) {
-        perror("    error ");
-    }
-
-    errno = 0;
-}
-
-static inline void __fail(const char* file, int line, const char* func, const char* text) {
-    __warn(file, line, func, text);
-    exit(1);
-}
-
-#define verify(cond) ((cond)? (0) : __fail(__FILE__, __LINE__, __func__, #cond))
-#define verify_ffmpeg(status) ((status) == 0? (0) : __fail(__FILE__, __LINE__, __func__, av_err2str(status)))
-#define verify_warn(cond) ((cond)? (0) : __warn(__FILE__, __LINE__, __func__, #cond))
+#include "util.h"
 
 #define OUTPUT_BITRATE 128000
 #define OUTPUT_SAMPLE_RATE 48000
 #define OUTPUT_CHANNEL_LAYOUT AV_CH_LAYOUT_STEREO
+#define THUMBNAIL_SIZE 200
+#define HASH_LENGTH 16
+
+#define STOP_AND_YIELD_FRAME (int)MKTAG('f', 'r', 'a', 'm')
+
+const char* HEX = "0123456789abcdef";
 
 typedef struct {
     AVFrame* resampled_frame;
@@ -47,6 +36,22 @@ typedef struct {
     AVRational input_time_base;
     AVRational output_time_base;
 } TranscodeContext;
+
+typedef struct {
+    AVFrame* frame;
+} CoverDecodeContext;
+
+// output must be at least of length 2*input_size + 1
+void hex(const uint8_t* input, size_t input_size, uint8_t* output) {
+    uint8_t const* pin = input;
+    uint8_t* pout = output;
+    for(; pin < input + input_size; pout += 2, pin += 1){
+        pout[0] = HEX[(*pin >> 4) & 0xF];
+        pout[1] = HEX[*pin & 0xF];
+    }
+
+    pout[-1] = 0;
+}
 
 // return 0 on success, negative on error
 typedef int (*decode_frame_cb)(void* ctx, AVFrame* frame);
@@ -69,12 +74,19 @@ int decode(AVCodecContext* avctx, const AVPacket* pkt,
         }
 
         if (ret == 0) {
-            cb(priv, frame);
+            ret = cb(priv, frame);
+        }
+
+        if (ret == STOP_AND_YIELD_FRAME) {
+            break;
         }
     }
 
-    av_frame_free(&frame);
-    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+    if (ret != STOP_AND_YIELD_FRAME) {
+        av_frame_free(&frame);
+    }
+
+    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF || ret == STOP_AND_YIELD_FRAME) {
         return 0;
     }
 
@@ -143,24 +155,21 @@ int handle_decoded(void* raw_ctx, AVFrame* frame) {
     return 0;
 }
 
-int transcode_audio(char* path, _Bool verbose) {
-    av_register_all();
+int handle_decoded_cover(void* raw_ctx, AVFrame* frame) {
+    CoverDecodeContext* ctx = (CoverDecodeContext*)raw_ctx;
+    ctx->frame = frame;
 
+    return STOP_AND_YIELD_FRAME;
+}
+
+int transcode_audio(char* path) {
     AVFormatContext* decode_format = NULL;
-
-    // Register all formats and codecs
-    av_register_all();
 
     // Open input file
     verify_ffmpeg(avformat_open_input(&decode_format, path, NULL, NULL));
 
     // Retrieve stream information
     verify(avformat_find_stream_info(decode_format, NULL) >= 0);
-
-    if (verbose) {
-        // Dump information about file onto standard error
-        av_dump_format(decode_format, 0, path, 0);
-    }
 
     // Find the first audio stream
     int audio_stream = -1;
@@ -195,7 +204,7 @@ int transcode_audio(char* path, _Bool verbose) {
     // Open muxer
     AVFormatContext* output_format_context = avformat_alloc_context();
     verify(output_format_context != NULL);
-    AVOutputFormat* output_format = av_guess_format("matroska", NULL, NULL);
+    AVOutputFormat* output_format = av_guess_format("webm", NULL, NULL);
     verify(output_format != NULL);
     AVStream* output_stream = avformat_new_stream(output_format_context, encode_codec);
     verify(output_stream != NULL);
@@ -285,10 +294,297 @@ next:
     return 0;
 }
 
+int print_tags_for_file(const char* path) {
+    AVFormatContext* decode_format = NULL;
+    int ret = avformat_open_input(&decode_format, path, NULL, NULL);
+    if (ret < 0) {
+        goto cleanup;
+    }
+
+    ret = avformat_find_stream_info(decode_format, NULL);
+    if (ret < 0) {
+        goto cleanup;
+    }
+
+    int audio_stream = -1;
+    for(uint32_t i = 0; i < decode_format->nb_streams; i++) {
+        if(decode_format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            audio_stream = i;
+            break;
+        }
+    }
+
+    verify(audio_stream != -1);
+
+    blake2b_state hash_state;
+    verify(blake2b_init(&hash_state, HASH_LENGTH) == 0);
+
+    while(1) {
+        AVPacket decode_packet;
+        ret = av_read_frame(decode_format, &decode_packet);
+        if (ret == AVERROR(EAGAIN)) {
+            sleep(1);
+            continue;
+        }
+
+        if (ret == AVERROR_EOF) {
+            ret = 0;
+            break;
+        }
+
+        verify_ffmpeg(ret);
+
+        if(decode_packet.stream_index != audio_stream) {
+            goto next;
+        }
+
+        blake2b_update(&hash_state, decode_packet.data, decode_packet.size);
+
+next:
+        av_packet_unref(&decode_packet);
+    }
+
+    uint8_t hashed_buf[HASH_LENGTH];
+    verify(blake2b_final(&hash_state, hashed_buf, sizeof(hashed_buf)) == 0);
+
+    uint8_t hash_hex_buf[(HASH_LENGTH * 2) + 1];
+    hex(hashed_buf, HASH_LENGTH, hash_hex_buf);
+
+    AVDictionaryEntry const* elem = av_dict_get(decode_format->metadata, "title", NULL, 0);
+    const char* title = (elem != NULL)? elem->value : "";
+
+    elem = av_dict_get(decode_format->metadata, "artist", NULL, 0);
+    if (elem == NULL) {
+        elem = av_dict_get(decode_format->metadata, "album_artist", NULL, 0);
+    }
+
+    const char* artist = (elem != NULL)? elem->value : "";
+
+    elem = av_dict_get(decode_format->metadata, "album", NULL, 0);
+    const char* album = (elem != NULL)? elem->value : "";
+
+    elem = av_dict_get(decode_format->metadata, "track", NULL, 0);
+    const char* track_string = (elem != NULL)? elem->value : "";
+
+    elem = av_dict_get(decode_format->metadata, "disc", NULL, 0);
+    const char* disc_string = (elem != NULL)? elem->value : "";
+
+    elem = av_dict_get(decode_format->metadata, "date", NULL, 0);
+    const char* date_string = (elem != NULL)? elem->value : "";
+
+#define FS "\x1c"
+#define P "%s"
+    printf(P FS P FS P FS P FS P FS P FS P "\n", hash_hex_buf, title, artist, album, track_string, disc_string, date_string);
+#undef FS
+#undef P
+
+cleanup:
+    if (decode_format != NULL) {
+        avformat_close_input(&decode_format);
+    }
+
+    if (ret < 0) {
+        fprintf(stderr, "Error getting tags: %s %s\n", path, av_err2str(ret));
+        printf("error\n");
+    }
+
+    return 0;
+}
+
+int get_tags(char* const* paths, int n_paths) {
+    for (int i = 0; i < n_paths; i += 1) {
+        const char* path = paths[i];
+        print_tags_for_file(path);
+    }
+
+    return 0;
+}
+
+int get_cover(const char* path, AVFrame** out_frame) {
+    AVFormatContext* decode_format = NULL;
+    AVCodecContext* decode_context = NULL;
+    int ret = 0;
+
+    ret = avformat_open_input(&decode_format, path, NULL, NULL);
+    if (ret < 0) { goto cleanup; }
+
+    ret = avformat_find_stream_info(decode_format, NULL);
+    if (ret < 0) { goto cleanup; }
+
+    // Find an image stream
+    int cover_stream = -1;
+    for(uint32_t i = 0; i < decode_format->nb_streams; i++) {
+        if(decode_format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            cover_stream = i;
+            break;
+        }
+    }
+
+    if (cover_stream == -1) {
+        ret = 1;
+        goto cleanup;
+    }
+
+    const AVStream* input_stream = decode_format->streams[cover_stream];
+    const AVCodecParameters* codecpar = input_stream->codecpar;
+    AVCodec* decode_codec = avcodec_find_decoder(codecpar->codec_id);
+    if(decode_codec == NULL) {
+        ret = 1;
+        goto cleanup;
+    }
+
+    decode_context = avcodec_alloc_context3(decode_codec);
+    ret = avcodec_parameters_to_context(decode_context, codecpar);
+    if (ret < 0) { goto cleanup; }
+    ret = avcodec_open2(decode_context, decode_codec, NULL);
+    if (ret < 0) { goto cleanup; }
+
+    CoverDecodeContext ctx;
+    ctx.frame = NULL;
+
+    while(1) {
+        AVPacket decode_packet;
+        ret = av_read_frame(decode_format, &decode_packet);
+        if (ret == AVERROR(EAGAIN)) {
+            sleep(1);
+            continue;
+        }
+
+        if (ret == AVERROR_EOF) {
+            ret = 0;
+            break;
+        }
+
+        if (ret < 0) {
+            goto cleanup;
+        }
+
+        if(decode_packet.stream_index != cover_stream) {
+            goto next;
+        }
+
+
+        verify_ffmpeg(decode(decode_context, &decode_packet, handle_decoded_cover, &ctx));
+
+next:
+        av_packet_unref(&decode_packet);
+        if (ctx.frame != NULL) { break; }
+    }
+
+cleanup:
+    if (decode_context != NULL) {
+        avcodec_close(decode_context);
+    }
+
+    if (decode_format != NULL) {
+        avformat_close_input(&decode_format);
+    }
+
+    if (ret == 0) {
+        *out_frame = ctx.frame;
+    }
+
+    return ret;
+}
+
+int get_covers(char* const* paths, int n_paths, bool thumbnail) {
+    AVFrame* scaled_frame = NULL;
+
+    struct jpeg_compress_struct jpeg_ctx;
+    struct jpeg_error_mgr jpeg_err;
+    jpeg_ctx.err = jpeg_std_error(&jpeg_err);
+    jpeg_create_compress(&jpeg_ctx);
+
+    for (int i = 0; i < n_paths; i += 1) {
+        const char* path = paths[i];
+        AVFrame* frame = NULL;
+        uint32_t out_size_32 = 0;
+        int ret = get_cover(path, &frame);
+        if (ret < 0) {
+            fprintf(stderr, "%s\n", av_err2str(ret));
+            fwrite(&out_size_32, sizeof(out_size_32), 1, stdout);
+            continue;
+        }
+
+        if (frame == NULL) {
+            fwrite(&out_size_32, sizeof(out_size_32), 1, stdout);
+            continue;
+        }
+
+        int target_width = frame->width;
+        int target_height = frame->height;
+
+        if (thumbnail) {
+            target_width = THUMBNAIL_SIZE;
+            target_height = THUMBNAIL_SIZE;
+        }
+
+        scaled_frame = av_frame_alloc();
+        verify(scaled_frame != NULL);
+        scaled_frame->format = AV_PIX_FMT_RGB24;
+        scaled_frame->width = target_width;
+        scaled_frame->height = target_height;
+        av_image_alloc(scaled_frame->data, scaled_frame->linesize, scaled_frame->width, scaled_frame->height, scaled_frame->format, 32);
+        scaled_frame->linesize[0] = target_width * 3;
+
+        struct SwsContext* sws = sws_getContext(frame->width, frame->height, frame->format, scaled_frame->width, scaled_frame->height, scaled_frame->format, SWS_LANCZOS, NULL, NULL, 0);
+        verify(sws != NULL);
+
+        sws_scale(sws, (const uint8_t * const*)frame->data, frame->linesize, 0, frame->height, scaled_frame->data, scaled_frame->linesize);
+        uint8_t* scaled_buf = scaled_frame->data[0];
+
+        unsigned long out_size = 0;
+        uint8_t* out_buf = NULL;
+
+        jpeg_ctx.image_width = scaled_frame->width;
+        jpeg_ctx.image_height = scaled_frame->height;
+        jpeg_ctx.input_components = 3;
+        jpeg_ctx.in_color_space = JCS_RGB;
+        jpeg_mem_dest(&jpeg_ctx, &out_buf, &out_size);
+        jpeg_set_defaults(&jpeg_ctx);
+        jpeg_start_compress(&jpeg_ctx, TRUE);
+
+        JSAMPROW row_pointer[1];
+        const int row_stride = jpeg_ctx.image_width * jpeg_ctx.input_components;
+        while (jpeg_ctx.next_scanline < jpeg_ctx.image_height) {
+            row_pointer[0] = &scaled_buf[jpeg_ctx.next_scanline * row_stride];
+            jpeg_write_scanlines(&jpeg_ctx, row_pointer, 1);
+        }
+
+        jpeg_finish_compress(&jpeg_ctx);
+
+        out_size_32 = out_size;
+        fwrite(&out_size_32, sizeof(out_size_32), 1, stdout);
+        fwrite(out_buf, sizeof(uint8_t), out_size_32, stdout);
+
+        free(out_buf);
+        sws_freeContext(sws);
+        av_frame_free(&frame);
+        av_frame_free(&scaled_frame);
+    }
+
+    jpeg_destroy_compress(&jpeg_ctx);
+
+    return 0;
+}
+
 int main(int argc, char** argv) {
     verify_warn(pledge("stdio rpath", NULL) == 0);
+    av_register_all();
 
-    if (argc > 1) {
-        return transcode_audio(argv[1], 0);
+    if (argc <= 2) {
+        return 1;
     }
+
+    if (strcmp(argv[1], "transcode-audio") == 0) {
+        return transcode_audio(argv[2]);
+    } else if(strcmp(argv[1], "get-tags") == 0) {
+        return get_tags(argv + 2, argc - 2);
+    } else if(strcmp(argv[1], "get-thumbnails") == 0) {
+        return get_covers(argv + 2, argc - 2, true);
+    } else if(strcmp(argv[1], "get-cover") == 0) {
+        return get_covers(argv + 2, min(argc - 2, 1), false);
+    }
+
+    return 1;
 }

@@ -1,3 +1,10 @@
+function ntoh(bytes, offset=0) {
+    return (bytes[3 + offset] << 0) |
+           (bytes[2 + offset] << 8) |
+           (bytes[1 + offset] << 16) |
+           (bytes[0 + offset] << 24)
+}
+
 // Fisher-Yates Shuffle
 function shuffle(array) {
     let counter = array.length
@@ -20,15 +27,15 @@ function shuffle(array) {
 }
 
 export class Album {
-    constructor(id, title, albumArtist, year, tracks, haveCover) {
+    constructor(id, title, albumArtist, year, tracks) {
         this.id = id
         this.title = title
         this.albumArtist = albumArtist
         this.year = year
         this.tracks = tracks
-
-        this.haveCover = haveCover
         this.thumbnail = null
+
+        this.haveCover = true
     }
 
     compare(other) {
@@ -46,7 +53,7 @@ export class Album {
     }
 
     static parse(data) {
-        return new Album(data.id, data.title, data.album_artist, data.year, data.tracks, data.cover)
+        return new Album(data.id, data.title, data.album_artist, data.year, data.tracks)
     }
 }
 
@@ -72,6 +79,7 @@ export class MediaLibrary {
 
         this.songs = []
         this.albums = []
+        this.thumbnails = new Map()
 
         this.songCache = new Map()
         this.albumCache = new Map()
@@ -80,18 +88,17 @@ export class MediaLibrary {
         this.albumIndex = new Map()
     }
 
-    refresh() {
+    async refresh() {
         const songs = []
-        const albums = new Set()
         const songCache = new Map()
+        const newAlbumIndex = new Map()
 
-        return self.fetch(`${this.root}/music/songs`).then((response) => {
-            return response.json()
-        }).then((results) => {
-            for(const rawSong of results) {
+        try {
+            const response = await self.fetch(`${this.root}/music/songs`)
+            const results = await response.json()
+            for(const rawSong of Object.values(results)) {
                 songs.push(rawSong.id)
-                albums.add(rawSong.album)
-                this.albumIndex.set(rawSong.id, rawSong.album)
+                newAlbumIndex.set(rawSong.id, rawSong.album_id)
 
                 try {
                     songCache.set(rawSong.id, Song.parse(rawSong))
@@ -100,22 +107,23 @@ export class MediaLibrary {
                     console.error(err)
                 }
             }
+        } catch (err) {
+            console.error('Error getting song manifest', err)
+            return
+        }
 
-            this.songs = songs
-            this.songCache = songCache
-            return this.getAlbums()
-        }).then((albums) => {
-            this.albums = albums
-        }).catch((err) => {
-            console.error('Invalid response from server', err)
-        })
+        this.songs = songs
+        this.songCache = songCache
+        this.albumIndex = newAlbumIndex
+        this.albums = await this.getAlbums()
+
+        await this.getThumbnails()
     }
 
-    shuffle() {
-        return this.refresh().then(() => {
-            shuffle(this.songs)
-            return this.songs
-        })
+    async shuffle() {
+        await this.refresh()
+        shuffle(this.songs)
+        return this.songs
     }
 
     songUrl(song) {
@@ -134,37 +142,65 @@ export class MediaLibrary {
         return `${this.root}/music/album/${album.id}/cover`
     }
 
-    getThumbnail(album) {
-        return `${this.root}/music/album/${album.id}/thumbnail`
-    }
+    async getThumbnails() {
+        const albumList = Array.from(this.albums)
+        const query = albumList.map((album) => encodeURIComponent(album.id)).join(',')
+        const response = await fetch(`${this.root}/music/thumbnail?ids=${query}`)
+        const body = await response.arrayBuffer()
+        const view = new Uint8Array(body)
 
-    getAlbums() {
-        return self.fetch(`${this.root}/music/albums`).then((response) => {
-            return response.json()
-        }).then((data) => {
-            const albums = []
-            for(let i = 0; i < data.length; i += 1) {
-                const album = Album.parse(data[i])
-                this.albumCache.set(album.id, album)
-                albums.push(album)
+        let offset = 0
+        const thumbnails = []
+        while (offset < view.length) {
+            const messageLength = ntoh(view, offset)
+            offset += 4
+
+            if (messageLength === 0) {
+                thumbnails.push(null)
+                continue
             }
 
-            return albums
-        })
-    }
-
-    getAlbum(id) {
-        if(this.albumCache.has(id)) {
-            return new Promise((resolve, reject) => { resolve(this.albumCache.get(id)) })
+            const blob = new Blob([view.slice(offset, messageLength + offset)], { type: 'image/jpeg' })
+            offset += messageLength
+            const url = URL.createObjectURL(blob)
+            thumbnails.push(url)
         }
 
-        return self.fetch(`${this.root}/music/album/${id}/metadata`).then((response) => {
-            return response.json()
-        }).then((data) => {
-            const album = Album.parse(data)
-            this.albumCache.set(id, album)
-            return album
-        })
+        for (const albumID of this.thumbnails.keys()) {
+            URL.revokeObjectURL(this.thumbnails.get(albumID))
+        }
+
+        this.thumbnails.clear()
+        for (let i = 0; i < thumbnails.length; i += 1) {
+            if (thumbnails[i] !== null) {
+                this.thumbnails.set(albumList[i].id, thumbnails[i])
+            }
+        }
+    }
+
+    async getAlbums() {
+        const response = await self.fetch(`${this.root}/music/albums`)
+        const data = await response.json()
+        const albums = []
+        for (const rawAlbum of Object.values(data)) {
+            const album = Album.parse(rawAlbum)
+            this.albumCache.set(album.id, album)
+            albums.push(album)
+        }
+
+        return albums
+    }
+
+    async getAlbum(id) {
+        if(this.albumCache.has(id)) {
+            return this.albumCache.get(id)
+        }
+
+        const response = await self.fetch(`${this.root}/music/album/${id}/metadata`)
+        const data = await response.json()
+        const album = Album.parse(data)
+        this.albumCache.set(id, album)
+        return album
     }
 
     getAlbumBySong(id) {

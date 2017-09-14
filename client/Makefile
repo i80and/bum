@@ -3,7 +3,7 @@
 SRC=./src/main.ts ./src/media.ts
 
 all: ./build/index.html
-	greni
+	greni --debug
 	rsync -ra --delete style/ build/style
 
 ./build/index.html: index.html

@@ -1,5 +1,5 @@
 import * as media from './media'
-import AlbumsView from './components/AlbumsView.js'
+import AlbumsView from './components/AlbumsView.html'
 
 const EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP'
 
@@ -119,7 +119,7 @@ function main() {
     const labelElement = document.getElementById('caption')
 
     const coverSwitcher = new CoverSwitcher(Array.from(document.getElementsByClassName('cover')))
-    const library = new media.MediaLibrary('/api')
+    const library = new media.MediaLibrary('http://localhost:8000/api')
     const player = new Player(library)
 
     library.refresh()
