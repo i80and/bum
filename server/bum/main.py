@@ -19,6 +19,7 @@ from bum.net import AsyncSocket, RPCClient, send_message, read_message
 from bum.media import Song, Album, TagsStanza
 
 logger = logging.getLogger('bum')
+u64_t = struct.Struct('=Q')
 u32_t = struct.Struct('=L')
 net_u32_t = struct.Struct('!L')
 KB = 1024
@@ -51,6 +52,7 @@ class CoordinatorMethods(enum.IntEnum):
     COVER = enum.auto()
     TRANSCODE = enum.auto()
     GET_FILE = enum.auto()
+    CANCEL_TRANSCODE = enum.auto()
 
 
 class CoordinatorErrorCodes(enum.IntEnum):
@@ -76,6 +78,7 @@ class CoordinatorErrorCodes(enum.IntEnum):
 class BumTranscode:
     def __init__(self) -> None:
         self.path = './transcoder/build/bum-transcode'
+        self.transcoders = {}  # type: Dict[int, asyncio.subprocess.Process]
 
     async def get_tags(self, paths: List[str]) -> AsyncGenerator[Tuple[TagsStanza, str], None]:
         for path_chunks in chunks(paths, 100):
@@ -97,15 +100,25 @@ class BumTranscode:
 
         return output
 
-    async def transcode(self, path: AnyStr) -> AsyncIterable[bytes]:
+    async def transcode(self, handle: int, path: AnyStr) -> AsyncIterable[bytes]:
         child = await self.spawn('transcode-audio', [path])
         assert child.stdout is not None
-        while True:
-            buf = await child.stdout.read(64 * KB)
-            if buf == b'':
-                return
+        self.transcoders[handle] = child
+        try:
+            while True:
+                buf = await child.stdout.read(64 * KB)
+                if buf == b'':
+                    return
 
-            yield buf
+                yield buf
+        finally:
+            del self.transcoders[handle]
+
+    def cancel_transcode(self, handle: int) -> None:
+        try:
+            self.transcoders[handle].kill()
+        except KeyError:
+            pass
 
     async def spawn(self, cmd: str, cmd_args: List[Any]) -> asyncio.subprocess.Process:
         args_list = [self.path, cmd] + cmd_args
@@ -274,13 +287,18 @@ def start_web(port: int) -> socket.socket:
         async def get(self, song_id: str) -> None:
             self.set_header('Content-Type', 'audio/webm')
 
-            provider = rpc.subscribe(CoordinatorMethods.TRANSCODE, bytes(song_id, 'utf-8'))
+            self.message_id = rpc.get_message_id()
+            provider = rpc.subscribe(CoordinatorMethods.TRANSCODE,
+                                     bytes(song_id, 'utf-8'),
+                                     message_id=self.message_id)
             async for _, chunk in provider:
                 self.write(chunk)
                 self.flush()
 
         def on_connection_close(self) -> None:
-            pass
+            rpc.cancel(self.message_id)
+            asyncio.ensure_future(
+                rpc.call(CoordinatorMethods.CANCEL_TRANSCODE, b'', message_id=self.message_id))
 
     class ListAlbumsHandler(tornado.web.RequestHandler):
         async def get(self) -> None:
@@ -397,7 +415,7 @@ class Coordinator:
         return (CoordinatorErrorCodes.OK, result)
 
     async def transcode(self, web_sock: AsyncSocket, message_id: int, song: Song):
-        async for chunk in bum_transcode.transcode(song.path):
+        async for chunk in bum_transcode.transcode(message_id, song.path):
             await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, chunk)
 
         await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, b'')
@@ -448,6 +466,9 @@ def run() -> None:
                     song = db.songs[str(raw_body, 'utf-8')]
                     asyncio.ensure_future(coordinator.transcode(web_sock, message_id, song))
                     continue
+                elif method == CoordinatorMethods.CANCEL_TRANSCODE:
+                    response_code = CoordinatorErrorCodes.OK
+                    bum_transcode.cancel_transcode(message_id)
                 elif method == CoordinatorMethods.GET_FILE:
                     path = str(raw_body, 'utf-8')
                     (response_code, response_body) = coordinator.get_static_file(path)
