@@ -8,6 +8,7 @@ import mimetypes
 import os
 import socket
 import struct
+import sys
 import time
 from asyncio import Future
 from typing import Any, AsyncGenerator, AnyStr, Optional, Tuple, TypeVar, Iterable, List, Dict, \
@@ -414,6 +415,8 @@ def start_web(port: int) -> socket.socket:
 
 
 class Coordinator:
+    STATIC_ROOT = os.path.realpath(os.environ.get('STATIC_ROOT', '../client/build'))
+
     def __init__(self, db: MediaDatabase, sock: AsyncSocket) -> None:
         self.db = db
         self.sock = sock
@@ -438,10 +441,9 @@ class Coordinator:
 
     def get_static_file(self, path: str) -> Tuple[CoordinatorErrorCodes, bytes]:
         logger.info('Reading %s', path)
-        root = '/Users/andrew/Documents/bum/client/build'
-        path = os.path.join(root, path.lstrip('/'))
+        path = os.path.join(self.STATIC_ROOT, path.lstrip('/'))
         path = os.path.realpath(path)
-        if not path.startswith(root):
+        if not path.startswith(self.STATIC_ROOT):
             return (CoordinatorErrorCodes.DENIED, b'')
 
         try:
@@ -463,10 +465,13 @@ class Coordinator:
 
 def run() -> None:
     logging.basicConfig(level=logging.INFO)
+    if len(sys.argv) < 2:
+        sys.exit(1)
+
     web_raw_sock = start_web(8000)
 
     sandbox(['stdio', 'unix', 'proc', 'exec', 'rpath'])
-    db = MediaDatabase('/Users/andrew/Music')
+    db = MediaDatabase(sys.argv[1])
 
     async def start() -> None:
         web_sock = await AsyncSocket.create(web_raw_sock)
