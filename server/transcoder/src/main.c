@@ -32,6 +32,7 @@ typedef struct {
 
     AVRational input_time_base;
     AVRational output_time_base;
+    double sample_rate_ratio;
 } TranscodeContext;
 
 typedef struct {
@@ -126,6 +127,7 @@ int handle_decoded(void* raw_ctx, AVFrame* frame) {
         verify_ffmpeg(swr_config_frame(swr, ctx->resampled_frame, frame));
         verify_ffmpeg(swr_init(swr));
         ctx->swr = swr;
+        ctx->sample_rate_ratio = (double)frame->sample_rate / (double)ctx->resampled_frame->sample_rate;
     }
 
     verify_ffmpeg(swr_convert_frame(ctx->swr, NULL, frame));
@@ -134,7 +136,7 @@ int handle_decoded(void* raw_ctx, AVFrame* frame) {
         ctx->resampled_frame->pts = pts;
         verify_ffmpeg(swr_convert_frame(ctx->swr, ctx->resampled_frame, NULL));
         verify_ffmpeg(encode(ctx->encode_context, ctx->resampled_frame, handle_encoded, ctx));
-        pts += ctx->resampled_frame->nb_samples;
+        pts += ctx->resampled_frame->nb_samples * ctx->sample_rate_ratio;
     }
 
     return 0;
@@ -217,6 +219,7 @@ int transcode_audio(char* path) {
     ctx.encode_context = encode_context;
     ctx.output_format_context = output_format_context;
     ctx.swr = NULL;
+    ctx.sample_rate_ratio = 1.0;
 
     // Setup our encoding frame
     ctx.resampled_frame = av_frame_alloc();
