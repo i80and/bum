@@ -11,100 +11,23 @@ from asyncio import Future
 from typing import Any, AsyncGenerator, AnyStr, Optional, Tuple, TypeVar, Iterable, List, Dict, \
     Union, AsyncIterator, AsyncIterable, NamedTuple
 
-from tornado.iostream import IOStream
 import pypledge
-import tornado.ioloop
-import tornado.locks
-import tornado.gen
-import tornado.process
+import tornado.platform.asyncio
 import tornado.web
 
+from bum.net import AsyncSocket, RPCClient, send_message, read_message
+from bum.media import Song, Album, TagsStanza
+
 logger = logging.getLogger('bum')
-message_header_t = struct.Struct('@III')
 u32_t = struct.Struct('=L')
 net_u32_t = struct.Struct('!L')
 KB = 1024
 T = TypeVar('T')
 
 
-class Song(NamedTuple):
-    id: str
-    path: str
-    title: str
-    artist: str
-    trackno: int
-    discno: int
-    album: str
-
-
-class Album(NamedTuple):
-    id: str
-    title: str
-    album_artist: str
-    year: int
-    tracks: List[str]
-    cover_path: str
-
-
-class TagsStanza(NamedTuple):
-    hash: bytes
-    title: bytes
-    artist: bytes
-    album: bytes
-    track_string: bytes
-    disc_string: bytes
-    date_string: bytes
-
-
 class Image(NamedTuple):
     data: bytes
     etag: str
-
-
-def sandbox(pledges: Iterable[str]) -> None:
-    try:
-        pypledge.pledge(pledges)
-    except OSError:
-        pass
-
-
-class AsyncCallback(AsyncIterator[T]):
-    __slots__ = ('condition', 'value')
-
-    def __init__(self) -> None:
-        self.condition = tornado.locks.Condition()
-        self.value = None  # type: Optional[T]
-
-    def __call__(self, value: Optional[T]) -> None:
-        self.value = value
-        self.condition.notify()
-
-    def stop(self) -> None:
-        self(None)
-
-    def __aiter__(self) -> AsyncIterator[T]:
-        return self
-
-    async def __anext__(self) -> T:
-        await self.condition.wait()
-        if self.value is None:
-            raise StopAsyncIteration
-
-        return self.value
-
-
-async def read_message(sock: IOStream) -> Tuple[int, int, bytes]:
-    message_header = await sock.read_bytes(message_header_t.size)
-    message_id, status, message_length = message_header_t.unpack(message_header)
-    message_body = await sock.read_bytes(message_length)
-
-    return (message_id, status, message_body)
-
-
-async def send_message(sock: IOStream, message_id: int, method: int, message: bytes) -> None:
-    packed = message_header_t.pack(int(message_id), int(method), len(message))
-    await sock.write(packed)
-    await sock.write(message)
 
 
 def chunks(l: List[T], n: int) -> Iterable[List[T]]:
@@ -113,23 +36,11 @@ def chunks(l: List[T], n: int) -> Iterable[List[T]]:
         yield l[i:(i + n)]
 
 
-def song_to_json(song: Song) -> object:
-    return {
-        'id': song.id,
-        'title': song.title,
-        'artist': song.artist,
-        'album_id': song.album
-    }
-
-
-def album_to_json(album: Album) -> object:
-    return {
-        'id': album.id,
-        'title': album.title,
-        'album_artist': album.album_artist,
-        'year': album.year,
-        'tracks': album.tracks,
-    }
+def sandbox(pledges: Iterable[str]) -> None:
+    try:
+        pypledge.pledge(pledges)
+    except OSError:
+        pass
 
 
 class CoordinatorMethods(enum.IntEnum):
@@ -168,8 +79,9 @@ class BumTranscode:
 
     async def get_tags(self, paths: List[str]) -> AsyncGenerator[Tuple[TagsStanza, str], None]:
         for path_chunks in chunks(paths, 100):
-            child = self.spawn('get-tags', path_chunks)
-            output = await child.stdout.read_until_close()
+            child = await self.spawn('get-tags', path_chunks)
+            assert child.stdout is not None
+            output = await child.stdout.read()
 
             for line, path in zip(output.split(b'\n'), path_chunks):
                 if not line:
@@ -179,25 +91,29 @@ class BumTranscode:
 
     async def get_cover_stream(self, paths: List[str], thumbnail: bool) -> bytes:
         method = 'get-thumbnails' if thumbnail else 'get-cover'
-        child = self.spawn(method, paths)
-        output = await child.stdout.read_until_close()
+        child = await self.spawn(method, paths)
+        assert child.stdout is not None
+        output = await child.stdout.read()
 
         return output
 
-    def transcode(self, path: AnyStr, cb: AsyncCallback) -> None:
-        def streaming_callback(b: bytes) -> None:
-            cb(b)
+    async def transcode(self, path: AnyStr) -> AsyncIterable[bytes]:
+        child = await self.spawn('transcode-audio', [path])
+        assert child.stdout is not None
+        while True:
+            buf = await child.stdout.read(64 * KB)
+            if buf == b'':
+                return
 
-        def exit_callback(status: int) -> None:
-            cb.stop()
+            yield buf
 
-        child = self.spawn('transcode-audio', [path])
-        child.set_exit_callback(exit_callback)
-        child.stdout.read_until_close(streaming_callback=cb)
-
-    def spawn(self, cmd: str, cmd_args: List[Any]) -> tornado.process.Subprocess:
+    async def spawn(self, cmd: str, cmd_args: List[Any]) -> asyncio.subprocess.Process:
         args_list = [self.path, cmd] + cmd_args
-        return tornado.process.Subprocess(args_list, stdout=tornado.process.Subprocess.STREAM)
+        return await asyncio.create_subprocess_exec(
+            *args_list,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=None,
+            stdin=asyncio.subprocess.PIPE)
 
 bum_transcode = BumTranscode()
 
@@ -277,59 +193,20 @@ class MediaDatabase:
             album.tracks.append(song.id)
 
 
-class RPCClient:
-    def __init__(self, sock: IOStream) -> None:
-        self.sock = sock
-        self.pending = {}  # type: Dict[int, Tuple[AsyncCallback[Tuple[int, bytes]], bool]]
-        self.message_counter = 0
-
-    async def subscribe(self,
-                        method: int,
-                        message: bytes,
-                        subscribe: bool=True) -> AsyncIterable[Tuple[int, bytes]]:
-        message_id = self.message_counter
-        self.message_counter += 1
-
-        await send_message(self.sock, message_id, int(method), message)
-        condition = tornado.locks.Condition()
-        sub = AsyncCallback()  # type: AsyncCallback[Tuple[int, bytes]]
-        l = (sub, subscribe)
-        self.pending[message_id] = l
-        async for result in sub:
-            yield result
-
-    async def call(self, method: int, message: bytes) -> Tuple[int, bytes]:
-        async for result in self.subscribe(method, message, subscribe=False):
-            return result
-
-        assert False
-
-    async def run(self) -> None:
-        while True:
-            message_id, response, body = await read_message(self.sock)
-            l = self.pending[message_id]
-            if l[1] and len(body) == 0:
-                del self.pending[message_id]
-                l[0].stop()
-                continue
-
-            l[0]((response, body))
-
-
-def start_web(port: int) -> IOStream:
+def start_web(port: int) -> socket.socket:
     child_sock, parent_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0)
 
     pid = os.fork()
     if pid > 0:
         child_sock.close()
-        return IOStream(parent_sock)
+        return parent_sock
 
     parent_sock.close()
-    stream = IOStream(child_sock)
+    tornado.platform.asyncio.AsyncIOMainLoop().install()
     sandbox(['stdio', 'inet', 'unix'])
 
     image_cache = {}  # type: Dict[Tuple[bool, str], Image]
-    rpc = RPCClient(stream)
+    rpc = None  # type: Optional[RPCClient]
 
     async def get_images(album_ids: List[str], thumbnail: bool) -> AsyncIterable[Image]:
         missing = []  # type: List[str]
@@ -467,33 +344,39 @@ def start_web(port: int) -> IOStream:
         (r'/(.*)', MainHandler)
     ])
 
+    async def setup() -> None:
+        nonlocal rpc
+        rpc = RPCClient(await AsyncSocket.create(child_sock))
+        await rpc.run()
+
     app.listen(port, '127.0.0.1')
-    tornado.ioloop.IOLoop.current().spawn_callback(rpc.run)
-    tornado.ioloop.IOLoop.current().start()
+    asyncio.ensure_future(setup())
+    asyncio.get_event_loop().run_forever()
+    assert False
 
 
 class Coordinator:
-    def __init__(self, db: MediaDatabase, sock: IOStream) -> None:
+    def __init__(self, db: MediaDatabase, sock: AsyncSocket) -> None:
         self.db = db
         self.sock = sock
 
     def list_songs(self) -> bytes:
         songs = {}  # type: Dict[str, object]
         for song in self.db.songs.values():
-            songs[song.id] = song_to_json(song)
+            songs[song.id] = song.to_json()
 
         return bytes(json.dumps(songs), 'utf-8')
 
     def list_albums(self) -> bytes:
         albums = {}  # type: Dict[str, object]
         for album in self.db.albums.values():
-            albums[album.id] = album_to_json(album)
+            albums[album.id] = album.to_json()
 
         return bytes(json.dumps(albums), 'utf-8')
 
     def get_album(self, album_id: str) -> bytes:
         album = self.db.albums[album_id]
-        return bytes(json.dumps(album_to_json(album)), 'utf-8')
+        return bytes(json.dumps(album.to_json()), 'utf-8')
 
     def get_static_file(self, path: str) -> Tuple[CoordinatorErrorCodes, bytes]:
         logger.info('Reading %s', path)
@@ -513,11 +396,8 @@ class Coordinator:
 
         return (CoordinatorErrorCodes.OK, result)
 
-    async def transcode(self, web_sock: IOStream, message_id: int, song: Song):
-        print('FOO')
-        cb = AsyncCallback()  # type: AsyncCallback[bytes]
-        bum_transcode.transcode(song.path, cb)
-        async for chunk in cb:
+    async def transcode(self, web_sock: AsyncSocket, message_id: int, song: Song):
+        async for chunk in bum_transcode.transcode(song.path):
             await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, chunk)
 
         await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, b'')
@@ -525,19 +405,19 @@ class Coordinator:
 
 def run() -> None:
     logging.basicConfig(level=logging.INFO)
-    web_sock = start_web(8000)
+    web_raw_sock = start_web(8000)
 
     sandbox(['stdio', 'unix', 'proc', 'exec', 'rpath'])
     db = MediaDatabase('/Users/andrew/Music')
-    coordinator = Coordinator(db, web_sock)
 
     async def start() -> None:
+        web_sock = await AsyncSocket.create(web_raw_sock)
+        coordinator = Coordinator(db, web_sock)
         await db.scan()
         logger.info('Done scanning')
 
         while True:
             message_id, method, raw_body = await read_message(web_sock)
-            print(method)
             response_body = b''
             response_code = CoordinatorErrorCodes.BAD_METHOD
 
@@ -579,8 +459,8 @@ def run() -> None:
 
             await send_message(web_sock, message_id, response_code, response_body)
 
-    tornado.ioloop.IOLoop.current().spawn_callback(start)
-    tornado.ioloop.IOLoop.current().start()
+    asyncio.ensure_future(start())
+    asyncio.get_event_loop().run_forever()
 
 if __name__ == '__main__':
     run()
