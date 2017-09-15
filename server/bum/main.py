@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import enum
 import hashlib
 import json
@@ -25,6 +26,29 @@ u32_t = struct.Struct('=L')
 net_u32_t = struct.Struct('!L')
 KB = 1024
 T = TypeVar('T')
+
+
+class HashingWorker:
+    def __init__(self) -> None:
+        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+    async def hash(self, data: bytes, digest_size: int=16) -> str:
+        future = self.pool.submit(self._hash, data, digest_size)
+        return await asyncio.wrap_future(future)
+
+    def close(self) -> None:
+        self.pool.shutdown()
+
+    def __enter__(self) -> 'HashingWorker':
+        return self
+
+    def __exit__(self, *args: Any) -> bool:
+        self.close()
+        return False
+
+    @staticmethod
+    def _hash(data: bytes, digest_size: int) -> str:
+        return hashlib.blake2b(data, digest_size=digest_size).hexdigest()
 
 
 class Image(NamedTuple):
@@ -136,6 +160,11 @@ class MediaDatabase:
     COVER_FILES = ('cover.jpg', 'cover.png')
     FILE_EXTENSIONS = {'.opus', '.ogg', '.oga', '.flac', '.mp3', '.mp4', '.m4a', '.wma', '.wav'}
 
+    class MediaLoadContext:
+        def __init__(self) -> None:
+            self.album = None  # type: Optional[Album]
+            self.current_album_title_bytes = None  # type: Optional[bytes]
+
     def __init__(self, root: str) -> None:
         self.root = root
         self.albums = {}  # type: Dict[str, Album]
@@ -153,62 +182,68 @@ class MediaDatabase:
 
         await self.load_files(paths)
 
-    async def load_files(self, paths: List[str]) -> None:
-        album = None  # type: Optional[Album]
-        current_album_title_bytes = None  # type: Optional[bytes]
+    async def load_file(self,
+                        path: str,
+                        stanza: TagsStanza,
+                        ctx: MediaLoadContext,
+                        hashing_worker: HashingWorker) -> None:
+        dirname = os.path.dirname(path)
 
-        async for stanza, path in bum_transcode.get_tags(paths):
-            dirname = os.path.dirname(path)
+        try:
+            disc_string = stanza.disc_string.split(b'/')[0] \
+                if b'/' in stanza.disc_string else stanza.disc_string
+            discno = int(disc_string)
+        except ValueError:
+            discno = 1
 
-            try:
-                disc_string = stanza.disc_string.split(b'/')[0] \
-                    if b'/' in stanza.disc_string else stanza.disc_string
-                discno = int(disc_string)
-            except ValueError:
-                discno = 1
+        try:
+            track_string = stanza.track_string.split(b'/')[0] \
+                if b'/' in stanza.track_string else stanza.track_string
+            trackno = int(track_string)
+        except ValueError:
+            trackno = -1
 
-            try:
-                track_string = stanza.track_string.split(b'/')[0] \
-                    if b'/' in stanza.track_string else stanza.track_string
-                trackno = int(track_string)
-            except ValueError:
-                trackno = -1
+        try:
+            year = int(stanza.date_string)
+        except ValueError:
+            year = 0
 
-            try:
-                year = int(stanza.date_string)
-            except ValueError:
-                year = 0
+        if not ctx.album or ctx.current_album_title_bytes != stanza.album:
+            ctx.current_album_title_bytes = stanza.album
+            hasher = hashlib.blake2b(digest_size=16)
+            hasher.update(stanza.album)
+            hasher.update(stanza.artist)
+            album_id = hasher.hexdigest()
 
-            if not album or current_album_title_bytes != stanza.album:
-                current_album_title_bytes = stanza.album
-                hasher = hashlib.blake2b(digest_size=16)
-                hasher.update(stanza.album)
-                hasher.update(stanza.artist)
-                album_id = hasher.hexdigest()
+            cover_filename = path
+            for candidate_filename in self.COVER_FILES:
+                candidate_path = os.path.join(dirname, candidate_filename)
+                if os.path.isfile(candidate_path):
+                    cover_filename = candidate_path
+                    break
 
-                cover_filename = path
-                for candidate_filename in self.COVER_FILES:
-                    candidate_path = os.path.join(dirname, candidate_filename)
-                    if os.path.isfile(candidate_path):
-                        cover_filename = candidate_path
-                        break
-
-                album = Album(album_id,
+            ctx.album = Album(album_id,
                               str(stanza.album, 'utf-8'),
                               str(stanza.artist, 'utf-8'),
                               year, [], cover_filename)
-                self.albums[album.id] = album
+            self.albums[ctx.album.id] = ctx.album
 
-            hasher = hashlib.blake2b(digest_size=16)
-            hasher.update(stanza.artist)
-            hasher.update(stanza.title)
-            song_id = '{}-{}-{}-{}'.format(hasher.hexdigest(), year, trackno, discno)
-            song = Song(song_id,
-                        path,
-                        str(stanza.title, 'utf-8'),
-                        str(stanza.artist, 'utf-8'), trackno, discno, album.id)
-            self.songs[song.id] = song
-            album.tracks.append(song.id)
+        hasher = hashlib.blake2b(digest_size=16)
+        hasher.update(stanza.artist)
+        hasher.update(stanza.title)
+        song_id = '{}-{}-{}-{}'.format(hasher.hexdigest(), year, trackno, discno)
+        song = Song(song_id,
+                    path,
+                    str(stanza.title, 'utf-8'),
+                    str(stanza.artist, 'utf-8'), trackno, discno, ctx.album.id)
+        self.songs[song.id] = song
+        ctx.album.tracks.append(song.id)
+
+    async def load_files(self, paths: List[str]) -> None:
+        ctx = self.MediaLoadContext()
+        with HashingWorker() as hashing_worker:
+            async for stanza, path in bum_transcode.get_tags(paths):
+                await self.load_file(path, stanza, ctx, hashing_worker)
 
 
 def start_web(port: int) -> socket.socket:
@@ -223,6 +258,7 @@ def start_web(port: int) -> socket.socket:
     tornado.platform.asyncio.AsyncIOMainLoop().install()
     sandbox(['stdio', 'inet', 'unix'])
 
+    hashing_worker = HashingWorker()
     image_cache = {}  # type: Dict[Tuple[bool, str], Image]
     rpc = None  # type: Optional[RPCClient]
 
@@ -250,9 +286,8 @@ def start_web(port: int) -> socket.socket:
         while len(view) > 0:
             image_size, = u32_t.unpack_from(view)
             image_data = view[u32_t.size:(u32_t.size + image_size)].tobytes()
-            hasher = hashlib.md5()
-            hasher.update(image_data)
-            image = Image(image_data, '"{}"'.format(hasher.hexdigest()))
+            image_hash = await hashing_worker.hash(image_data)
+            image = Image(image_data, '"{}"'.format(image_hash))
             image_cache[(thumbnail, missing[i])] = image
             yield image
 
