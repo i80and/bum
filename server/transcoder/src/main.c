@@ -79,8 +79,6 @@ int decode(AVCodecContext* avctx, const AVPacket* pkt,
     return ret;
 }
 
-static int64_t pts = 0;
-
 int encode(AVCodecContext* avctx, const AVFrame* frame,
            encode_packet_cb cb, void* priv) {
     AVPacket pkt;
@@ -132,11 +130,11 @@ int handle_decoded(void* raw_ctx, AVFrame* frame) {
 
     verify_ffmpeg(swr_convert_frame(ctx->swr, NULL, frame));
 
+    ctx->resampled_frame->pts = frame->pts;
     while (swr_get_delay(ctx->swr, frame->sample_rate) >= ctx->encode_context->frame_size) {
-        ctx->resampled_frame->pts = pts;
         verify_ffmpeg(swr_convert_frame(ctx->swr, ctx->resampled_frame, NULL));
         verify_ffmpeg(encode(ctx->encode_context, ctx->resampled_frame, handle_encoded, ctx));
-        pts += ctx->resampled_frame->nb_samples * ctx->sample_rate_ratio;
+        ctx->resampled_frame->pts += 960;
     }
 
     return 0;
