@@ -23,7 +23,7 @@ CFLAGS=-std=c99 -Wall -Wextra -Wshadow -Wno-unused-parameter ${OPT_FLAG} `pkg-co
 .PHONY: clean lint
 
 build/bum-transcode: src/*.c src/*.h
-	gcc -o $@ $(CFLAGS) src/main.c $(LIBS) ${INSECURE_FLAG} -flto
+	$(CC) -o $@ $(CFLAGS) src/main.c $(LIBS) ${INSECURE_FLAG}
 
 clean:
 	-rm -r build/*

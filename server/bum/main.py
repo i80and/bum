@@ -257,7 +257,6 @@ def start_web(port: int) -> socket.socket:
 
     parent_sock.close()
     tornado.platform.asyncio.AsyncIOMainLoop().install()
-    sandbox(['stdio', 'inet', 'unix'])
 
     hashing_worker = HashingWorker()
     image_cache = {}  # type: Dict[Tuple[bool, str], Image]
@@ -410,6 +409,7 @@ def start_web(port: int) -> socket.socket:
 
     app.listen(port, '127.0.0.1')
     asyncio.ensure_future(setup())
+    sandbox(['stdio', 'inet', 'unix'])
     asyncio.get_event_loop().run_forever()
     assert False
 
