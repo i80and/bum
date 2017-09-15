@@ -12,15 +12,6 @@ class AsyncSocket(NamedTuple):
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
 
-    def write(self, data: bytes) -> None:
-        self.writer.write(data)
-
-    async def flush(self) -> None:
-        await self.writer.drain()
-
-    def read_bytes(self, n_bytes: int) -> Awaitable[bytes]:
-        return self.reader.readexactly(n_bytes)
-
     @staticmethod
     async def create(sock: socket) -> 'AsyncSocket':
         (reader, writer) = await asyncio.open_connection(sock=sock)
@@ -29,18 +20,18 @@ class AsyncSocket(NamedTuple):
 
 async def read_message(sock: AsyncSocket) -> Tuple[int, int, bytes]:
     ev = asyncio.get_event_loop()
-    message_header = await sock.read_bytes(message_header_t.size)
+    message_header = await sock.reader.readexactly(message_header_t.size)
     message_id, status, message_length = message_header_t.unpack(message_header)
-    message_body = await sock.read_bytes(message_length)
+    message_body = await sock.reader.readexactly(message_length)
 
     return (message_id, status, message_body)
 
 
 async def send_message(sock: AsyncSocket, message_id: int, method: int, message: bytes) -> None:
     packed = message_header_t.pack(int(message_id), int(method), len(message))
-    sock.write(packed)
-    sock.write(message)
-    await sock.flush()
+    sock.writer.write(packed)
+    sock.writer.write(message)
+    await sock.writer.flush()
 
 
 class RPCClient:
