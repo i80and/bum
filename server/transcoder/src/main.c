@@ -13,7 +13,6 @@
 #include <libswscale/swscale.h>
 
 #include <jpeglib.h>
-#include <blake2.h>
 
 #include "util.h"
 
@@ -24,8 +23,6 @@
 #define HASH_LENGTH 16
 
 #define STOP_AND_YIELD_FRAME (int)MKTAG('f', 'r', 'a', 'm')
-
-const char* HEX = "0123456789abcdef";
 
 typedef struct {
     AVFrame* resampled_frame;
@@ -40,18 +37,6 @@ typedef struct {
 typedef struct {
     AVFrame* frame;
 } CoverDecodeContext;
-
-// output must be at least of length 2*input_size + 1
-void hex(const uint8_t* input, size_t input_size, uint8_t* output) {
-    uint8_t const* pin = input;
-    uint8_t* pout = output;
-    for(; pin < input + input_size; pout += 2, pin += 1){
-        pout[0] = HEX[(*pin >> 4) & 0xF];
-        pout[1] = HEX[*pin & 0xF];
-    }
-
-    pout[-1] = 0;
-}
 
 // return 0 on success, negative on error
 typedef int (*decode_frame_cb)(void* ctx, AVFrame* frame);
@@ -316,9 +301,6 @@ int print_tags_for_file(const char* path) {
 
     verify(audio_stream != -1);
 
-    blake2b_state hash_state;
-    verify(blake2b_init(&hash_state, HASH_LENGTH) == 0);
-
     while(1) {
         AVPacket decode_packet;
         ret = av_read_frame(decode_format, &decode_packet);
@@ -338,17 +320,9 @@ int print_tags_for_file(const char* path) {
             goto next;
         }
 
-        blake2b_update(&hash_state, decode_packet.data, decode_packet.size);
-
 next:
         av_packet_unref(&decode_packet);
     }
-
-    uint8_t hashed_buf[HASH_LENGTH];
-    verify(blake2b_final(&hash_state, hashed_buf, sizeof(hashed_buf)) == 0);
-
-    uint8_t hash_hex_buf[(HASH_LENGTH * 2) + 1];
-    hex(hashed_buf, HASH_LENGTH, hash_hex_buf);
 
     AVDictionaryEntry const* elem = av_dict_get(decode_format->metadata, "title", NULL, 0);
     const char* title = (elem != NULL)? elem->value : "";
@@ -374,7 +348,7 @@ next:
 
 #define FS "\x1c"
 #define P "%s"
-    printf(P FS P FS P FS P FS P FS P FS P "\n", hash_hex_buf, title, artist, album, track_string, disc_string, date_string);
+    printf(P FS P FS P FS P FS P FS P "\n", title, artist, album, track_string, disc_string, date_string);
 #undef FS
 #undef P
 

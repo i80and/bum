@@ -38,7 +38,6 @@ class Album(NamedTuple):
 
 
 class TagsStanza(NamedTuple):
-    hash: bytes
     title: bytes
     artist: bytes
     album: bytes

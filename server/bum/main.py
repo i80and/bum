@@ -7,6 +7,7 @@ import mimetypes
 import os
 import socket
 import struct
+import time
 from asyncio import Future
 from typing import Any, AsyncGenerator, AnyStr, Optional, Tuple, TypeVar, Iterable, List, Dict, \
     Union, AsyncIterator, AsyncIterable, NamedTuple
@@ -180,7 +181,7 @@ class MediaDatabase:
 
             if not album or current_album_title_bytes != stanza.album:
                 current_album_title_bytes = stanza.album
-                hasher = hashlib.md5()
+                hasher = hashlib.blake2b(digest_size=16)
                 hasher.update(stanza.album)
                 hasher.update(stanza.artist)
                 album_id = hasher.hexdigest()
@@ -198,7 +199,11 @@ class MediaDatabase:
                               year, [], cover_filename)
                 self.albums[album.id] = album
 
-            song = Song(str(stanza.hash, 'utf-8'),
+            hasher = hashlib.blake2b(digest_size=16)
+            hasher.update(stanza.artist)
+            hasher.update(stanza.title)
+            song_id = '{}-{}-{}-{}'.format(hasher.hexdigest(), year, trackno, discno)
+            song = Song(song_id,
                         path,
                         str(stanza.title, 'utf-8'),
                         str(stanza.artist, 'utf-8'), trackno, discno, album.id)
@@ -431,8 +436,9 @@ def run() -> None:
     async def start() -> None:
         web_sock = await AsyncSocket.create(web_raw_sock)
         coordinator = Coordinator(db, web_sock)
+        start = time.time()
         await db.scan()
-        logger.info('Done scanning')
+        logger.info('Done scanning in %fs', time.time() - start)
 
         while True:
             message_id, method, raw_body = await read_message(web_sock)
