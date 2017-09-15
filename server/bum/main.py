@@ -465,6 +465,7 @@ class Coordinator:
 
 def run() -> None:
     logging.basicConfig(level=logging.INFO)
+    mimetypes.init()
     if len(sys.argv) < 2:
         sys.exit(1)
 
