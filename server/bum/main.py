@@ -26,6 +26,8 @@ u64_t = struct.Struct('=Q')
 u32_t = struct.Struct('=L')
 net_u32_t = struct.Struct('!L')
 KB = 1024
+CACHE_CONTROL_UNCHANGING = f'public, max-age={60 * 60 * 7}'
+CACHE_CONTROL_TRANSIENT = f'public, max-age={60 * 60}'
 T = TypeVar('T')
 
 
@@ -305,12 +307,13 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
-            self.write(result)
             file_type, _ = mimetypes.guess_type(path)
             if file_type is None:
                 file_type = 'binary/octet-stream'
 
             self.set_header('Content-Type', file_type)
+            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.write(result)
 
     class ListSongsHandler(tornado.web.RequestHandler):
         async def get(self) -> None:
@@ -320,12 +323,14 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
-            self.write(result)
             self.set_header('Content-Type', 'application/json')
+            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.write(result)
 
     class SongHandler(tornado.web.RequestHandler):
         async def get(self, song_id: str) -> None:
             self.set_header('Content-Type', 'audio/webm')
+            self.set_header('Cache-Control', CACHE_CONTROL_UNCHANGING)
 
             self.message_id = rpc.get_message_id()
             provider = rpc.subscribe(CoordinatorMethods.TRANSCODE,
@@ -348,8 +353,9 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
-            self.write(result)
             self.set_header('Content-Type', 'application/json')
+            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.write(result)
 
     class AlbumHandler(tornado.web.RequestHandler):
         async def get(self, album_id: str) -> None:
@@ -360,8 +366,9 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
-            self.write(result)
             self.set_header('Content-Type', 'application/json')
+            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.write(result)
 
     class AlbumArtHandler(tornado.web.RequestHandler):
         async def get(self, album_id: str) -> None:
@@ -376,7 +383,7 @@ def start_web(port: int) -> socket.socket:
                     return
 
                 self.set_header('Content-Type', 'image/jpeg')
-                self.set_header('Cache-Control', 'public, max-age=15768000')
+                self.set_header('Cache-Control', CACHE_CONTROL_UNCHANGING)
                 self.set_header('ETag', image.etag)
                 self.write(image.data)
 
@@ -387,7 +394,9 @@ def start_web(port: int) -> socket.socket:
             raw_album_ids = str(self.request.query_arguments.get('ids', [b''])[0], 'utf-8')
             album_ids = raw_album_ids.split(',')
             self.set_header('Content-Type', 'binary/octet-stream')
+            self.set_header('Cache-Control', CACHE_CONTROL_UNCHANGING)
 
+            all_hashes = []  # type: List[str]
             async for image in get_images(album_ids, True):
                 self.write(net_u32_t.pack(len(image.data)))
                 self.write(image.data)
