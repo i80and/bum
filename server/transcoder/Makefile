@@ -1,10 +1,10 @@
-INSECURE?=0
+SANDBOX?=1
 DEBUG?=0
 
-ifeq ($(INSECURE), 1)
-	INSECURE_FLAG=-DINSECURE
+ifeq ($(SANDBOX), 1)
 $(info sandboxing: ON)
 else
+	INSECURE_FLAG=-DINSECURE
 $(info sandboxing: OFF)
 endif
 
