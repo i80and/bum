@@ -191,7 +191,7 @@ class MediaLibrary {
             albums.push(album);
         }
 
-        return albums
+        return albums.sort((a, b) => a.compare(b))
     }
 
     async getAlbum(id) {

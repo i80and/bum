@@ -225,6 +225,9 @@ class MediaDatabase:
                     cover_filename = candidate_path
                     break
 
+            if ctx.album:
+                ctx.album.tracks.sort(key=lambda track: self.songs[track].trackno)
+
             ctx.album = Album(album_id,
                               str(stanza.album, 'utf-8'),
                               str(stanza.artist, 'utf-8'),
