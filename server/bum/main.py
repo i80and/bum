@@ -431,17 +431,11 @@ class Coordinator:
         self.sock = sock
 
     def list_songs(self) -> bytes:
-        songs = {}  # type: Dict[str, object]
-        for song in self.db.songs.values():
-            songs[song.id] = song.to_json()
-
+        songs = {'songs': [s.to_json() for s in self.db.songs.values()]}
         return bytes(json.dumps(songs), 'utf-8')
 
     def list_albums(self) -> bytes:
-        albums = {}  # type: Dict[str, object]
-        for album in self.db.albums.values():
-            albums[album.id] = album.to_json()
-
+        albums = {'albums': [a.to_json() for a in self.db.albums.values()]}
         return bytes(json.dumps(albums), 'utf-8')
 
     def get_album(self, album_id: str) -> bytes:

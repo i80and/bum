@@ -1,7 +1,6 @@
 # Python
 __pycache__/
 .mypy_cache/
-build/
 venv/
 
 # Compiled files

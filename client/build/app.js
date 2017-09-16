@@ -98,8 +98,8 @@ class MediaLibrary {
 
         try {
             const response = await self.fetch(`${this.root}/music/songs`);
-            const results = await response.json();
-            for(const rawSong of Object.values(results)) {
+            const data = await response.json();
+            for(const rawSong of data.songs) {
                 songs.push(rawSong.id);
                 newAlbumIndex.set(rawSong.id, rawSong.album_id);
 
@@ -185,7 +185,7 @@ class MediaLibrary {
         const response = await self.fetch(`${this.root}/music/albums`);
         const data = await response.json();
         const albums = [];
-        for (const rawAlbum of Object.values(data)) {
+        for (const rawAlbum of data.albums) {
             const album = Album.parse(rawAlbum);
             this.albumCache.set(album.id, album);
             albums.push(album);
@@ -896,7 +896,7 @@ function main() {
     const labelElement = document.getElementById('caption');
 
     const coverSwitcher = new CoverSwitcher(Array.from(document.getElementsByClassName('cover')));
-    const library = new MediaLibrary('http://localhost:8000/api');
+    const library = new MediaLibrary('/api');
     const player = new Player(library);
 
     library.refresh();

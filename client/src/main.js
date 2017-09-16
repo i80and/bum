@@ -119,7 +119,7 @@ function main() {
     const labelElement = document.getElementById('caption')
 
     const coverSwitcher = new CoverSwitcher(Array.from(document.getElementsByClassName('cover')))
-    const library = new media.MediaLibrary('http://localhost:8000/api')
+    const library = new media.MediaLibrary('/api')
     const player = new Player(library)
 
     library.refresh()

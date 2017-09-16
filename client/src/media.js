@@ -95,8 +95,8 @@ export class MediaLibrary {
 
         try {
             const response = await self.fetch(`${this.root}/music/songs`)
-            const results = await response.json()
-            for(const rawSong of Object.values(results)) {
+            const data = await response.json()
+            for(const rawSong of data.songs) {
                 songs.push(rawSong.id)
                 newAlbumIndex.set(rawSong.id, rawSong.album_id)
 
@@ -182,7 +182,7 @@ export class MediaLibrary {
         const response = await self.fetch(`${this.root}/music/albums`)
         const data = await response.json()
         const albums = []
-        for (const rawAlbum of Object.values(data)) {
+        for (const rawAlbum of data.albums) {
             const album = Album.parse(rawAlbum)
             this.albumCache.set(album.id, album)
             albums.push(album)
