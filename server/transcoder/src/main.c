@@ -130,11 +130,11 @@ int handle_decoded(void* raw_ctx, AVFrame* frame) {
 
     verify_ffmpeg(swr_convert_frame(ctx->swr, NULL, frame));
 
-    ctx->resampled_frame->pts = frame->pts;
+    // ctx->resampled_frame->pts = frame->pts;
     while (swr_get_delay(ctx->swr, frame->sample_rate) >= ctx->encode_context->frame_size) {
         verify_ffmpeg(swr_convert_frame(ctx->swr, ctx->resampled_frame, NULL));
         verify_ffmpeg(encode(ctx->encode_context, ctx->resampled_frame, handle_encoded, ctx));
-        ctx->resampled_frame->pts += 960;
+        // ctx->resampled_frame->pts += 960;
     }
 
     return 0;
