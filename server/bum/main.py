@@ -1,6 +1,7 @@
 import asyncio
 import concurrent.futures
 import enum
+import gzip
 import hashlib
 import json
 import logging
@@ -35,7 +36,11 @@ class TranscodeError(Exception):
     pass
 
 
-class HashingWorker:
+def compressible(mime: str) -> bool:
+    return mime.startswith('text/') or mime in ('application/javascript', 'image/svg+xml')
+
+
+class Worker:
     def __init__(self) -> None:
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
@@ -43,10 +48,14 @@ class HashingWorker:
         future = self.pool.submit(self._hash, data, digest_size)
         return await asyncio.wrap_future(future)
 
+    async def gzip(self, data: bytes) -> bytes:
+        future = self.pool.submit(self._gzip, data)
+        return await asyncio.wrap_future(future)
+
     def close(self) -> None:
         self.pool.shutdown()
 
-    def __enter__(self) -> 'HashingWorker':
+    def __enter__(self) -> 'Worker':
         return self
 
     def __exit__(self, *args: Any) -> bool:
@@ -56,6 +65,10 @@ class HashingWorker:
     @staticmethod
     def _hash(data: bytes, digest_size: int) -> str:
         return hashlib.blake2b(data, digest_size=digest_size).hexdigest()
+
+    @staticmethod
+    def _gzip(data: bytes) -> bytes:
+        return gzip.compress(data)
 
 
 class Image(NamedTuple):
@@ -210,7 +223,7 @@ class MediaDatabase:
                         path: str,
                         stanza: TagsStanza,
                         ctx: MediaLoadContext,
-                        hashing_worker: HashingWorker) -> None:
+                        hashing_worker: Worker) -> None:
         dirname = os.path.dirname(path)
 
         try:
@@ -268,7 +281,7 @@ class MediaDatabase:
 
     async def load_files(self, paths: List[str]) -> None:
         ctx = self.MediaLoadContext()
-        with HashingWorker() as hashing_worker:
+        with Worker() as hashing_worker:
             async for stanza, path in bum_transcode.get_tags(paths):
                 await self.load_file(path, stanza, ctx, hashing_worker)
 
@@ -284,7 +297,7 @@ def start_web(port: int) -> socket.socket:
     parent_sock.close()
     tornado.platform.asyncio.AsyncIOMainLoop().install()
 
-    hashing_worker = HashingWorker()
+    hashing_worker = Worker()
     image_cache = {}  # type: Dict[Tuple[bool, str], Image]
     rpc = None  # type: Optional[RPCClient]
 
@@ -320,7 +333,7 @@ def start_web(port: int) -> socket.socket:
             i += 1
             view = view[(u32_t.size + image_size):]
 
-    class MainHandler(tornado.web.RequestHandler):
+    class StaticHandler(tornado.web.RequestHandler):
         async def get(self, path: str) -> None:
             if not path:
                 path = 'index.html'
@@ -331,11 +344,16 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
-            file_type, _ = mimetypes.guess_type(path)
-            if file_type is None:
-                file_type = 'binary/octet-stream'
+            mimetype, _ = mimetypes.guess_type(path)
+            if mimetype is None:
+                mimetype = 'binary/octet-stream'
 
-            self.set_header('Content-Type', file_type)
+            if compressible(mimetype) and 'gzip' in self.request.headers.get('Accept-Encoding', ''):
+                self.set_header('Content-Encoding', 'gzip')
+                result = await hashing_worker.gzip(result)
+
+            self.set_header('Content-Type', mimetype)
+            self.set_header('Vary', 'Accept-Encoding')
             self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
@@ -347,7 +365,12 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
+            if 'gzip' in self.request.headers.get('Accept-Encoding', ''):
+                self.set_header('Content-Encoding', 'gzip')
+                result = await hashing_worker.gzip(result)
+
             self.set_header('Content-Type', 'application/json')
+            self.set_header('Vary', 'Accept-Encoding')
             self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
@@ -384,7 +407,12 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
+            if 'gzip' in self.request.headers.get('Accept-Encoding', ''):
+                self.set_header('Content-Encoding', 'gzip')
+                result = await hashing_worker.gzip(result)
+
             self.set_header('Content-Type', 'application/json')
+            self.set_header('Vary', 'Accept-Encoding')
             self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
@@ -397,7 +425,12 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
+            if 'gzip' in self.request.headers.get('Accept-Encoding', ''):
+                self.set_header('Content-Encoding', 'gzip')
+                result = await hashing_worker.gzip(result)
+
             self.set_header('Content-Type', 'application/json')
+            self.set_header('Vary', 'Accept-Encoding')
             self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
@@ -439,7 +472,7 @@ def start_web(port: int) -> socket.socket:
         (r'/api/music/album/([\w\\-]+)/metadata', AlbumHandler),
         (r'/api/music/album/([\w\\-]+)/cover', AlbumArtHandler),
         (r'/api/music/thumbnail', ThumbnailHandler),
-        (r'/(.*)', MainHandler)
+        (r'/(.*)', StaticHandler)
     ])
 
     async def setup() -> None:
