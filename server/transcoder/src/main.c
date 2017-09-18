@@ -32,7 +32,6 @@ typedef struct {
 
     AVRational input_time_base;
     AVRational output_time_base;
-    double sample_rate_ratio;
 } TranscodeContext;
 
 typedef struct {
@@ -125,16 +124,13 @@ int handle_decoded(void* raw_ctx, AVFrame* frame) {
         verify_ffmpeg(swr_config_frame(swr, ctx->resampled_frame, frame));
         verify_ffmpeg(swr_init(swr));
         ctx->swr = swr;
-        ctx->sample_rate_ratio = (double)frame->sample_rate / (double)ctx->resampled_frame->sample_rate;
     }
 
     verify_ffmpeg(swr_convert_frame(ctx->swr, NULL, frame));
 
-    // ctx->resampled_frame->pts = frame->pts;
     while (swr_get_delay(ctx->swr, frame->sample_rate) >= ctx->encode_context->frame_size) {
         verify_ffmpeg(swr_convert_frame(ctx->swr, ctx->resampled_frame, NULL));
         verify_ffmpeg(encode(ctx->encode_context, ctx->resampled_frame, handle_encoded, ctx));
-        // ctx->resampled_frame->pts += 960;
     }
 
     return 0;
@@ -217,7 +213,6 @@ int transcode_audio(char* path) {
     ctx.encode_context = encode_context;
     ctx.output_format_context = output_format_context;
     ctx.swr = NULL;
-    ctx.sample_rate_ratio = 1.0;
 
     // Setup our encoding frame
     ctx.resampled_frame = av_frame_alloc();
@@ -290,39 +285,6 @@ int print_tags_for_file(const char* path) {
     ret = avformat_find_stream_info(decode_format, NULL);
     if (ret < 0) {
         goto cleanup;
-    }
-
-    int audio_stream = -1;
-    for(uint32_t i = 0; i < decode_format->nb_streams; i++) {
-        if(decode_format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-            audio_stream = i;
-            break;
-        }
-    }
-
-    verify(audio_stream != -1);
-
-    while(1) {
-        AVPacket decode_packet;
-        ret = av_read_frame(decode_format, &decode_packet);
-        if (ret == AVERROR(EAGAIN)) {
-            sleep(1);
-            continue;
-        }
-
-        if (ret == AVERROR_EOF) {
-            ret = 0;
-            break;
-        }
-
-        verify_ffmpeg(ret);
-
-        if(decode_packet.stream_index != audio_stream) {
-            goto next;
-        }
-
-next:
-        av_packet_unref(&decode_packet);
     }
 
     AVDictionaryEntry const* elem = av_dict_get(decode_format->metadata, "title", NULL, 0);
