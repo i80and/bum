@@ -64,17 +64,25 @@ class RPCClient:
         queue = Queue()  # type: Queue[Tuple[int, Optional[bytes]]]
         l = (queue, subscribe)
         self.pending[message_id] = l
-        while True:
-            result = await queue.get()
-            yield result
 
-            if result[1] is None:
-                return
+        try:
+            while True:
+                result = await queue.get()
+                yield result
+
+                if result[1] is None:
+                    return
+        finally:
+            if message_id in self.pending:
+                del self.pending[message_id]
 
     def cancel(self, code: int, message_id: int) -> None:
-        l = self.pending[message_id]
-        l[0].put_nowait((code, None))
-        del self.pending[message_id]
+        try:
+            l = self.pending[message_id]
+            l[0].put_nowait((code, None))
+            del self.pending[message_id]
+        except KeyError:
+            pass
 
     async def call(self, method: int, message: bytes, message_id: int=None) -> Tuple[int, bytes]:
         async for result in self.subscribe(method, message, subscribe=False, message_id=message_id):

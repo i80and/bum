@@ -354,7 +354,10 @@ def start_web(port: int) -> socket.socket:
     class SongHandler(tornado.web.RequestHandler):
         async def get(self, song_id: str) -> None:
             self.set_header('Content-Type', 'audio/webm')
-            self.set_header('Cache-Control', CACHE_CONTROL_UNCHANGING)
+
+            # Unfortunately, we can't promise that the transcode will
+            # complete successfully.
+            self.set_header('Pragma', 'no-cache')
 
             self.message_id = rpc.get_message_id()
             provider = rpc.subscribe(CoordinatorMethods.TRANSCODE,
