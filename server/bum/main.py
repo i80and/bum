@@ -11,9 +11,8 @@ import socket
 import struct
 import sys
 import time
-from asyncio import Future
 from typing import Any, AsyncGenerator, AnyStr, Optional, Tuple, TypeVar, Iterable, List, Dict, \
-    Union, AsyncIterator, AsyncIterable, NamedTuple
+    AsyncIterable, NamedTuple
 
 import pypledge
 import tornado.platform.asyncio
@@ -169,8 +168,8 @@ class BumTranscode:
                 yield buf
         finally:
             del self.transcoders[handle]
-            if child.returncode != 0:
-                raise TranscodeError(path, child.returncode)
+            if await child.wait() != 0:
+                raise TranscodeError(path)
 
     def cancel_transcode(self, handle: int) -> None:
         try:
@@ -376,6 +375,8 @@ def start_web(port: int) -> socket.socket:
 
     class SongHandler(tornado.web.RequestHandler):
         async def get(self, song_id: str) -> None:
+            self.done = False
+            self.canceled = False
             self.set_header('Content-Type', 'audio/webm')
 
             # Unfortunately, we can't promise that the transcode will
@@ -388,14 +389,22 @@ def start_web(port: int) -> socket.socket:
                                      message_id=self.message_id)
             async for code, chunk in provider:
                 if code != 0:
-                    raise TranscodeError(song_id)
+                    if self.canceled:
+                        return
+
+                    raise TranscodeError(song_id, code)
 
                 if chunk:
                     self.write(chunk)
                     self.flush()
 
+            self.done = True
+
         def on_connection_close(self) -> None:
-            rpc.cancel(CoordinatorErrorCodes.OK, self.message_id)
+            if self.done:
+                return
+
+            self.canceled = True
             asyncio.ensure_future(
                 rpc.call(CoordinatorMethods.CANCEL_TRANSCODE, b'', message_id=self.message_id))
 
@@ -460,7 +469,6 @@ def start_web(port: int) -> socket.socket:
             self.set_header('Content-Type', 'binary/octet-stream')
             self.set_header('Cache-Control', CACHE_CONTROL_UNCHANGING)
 
-            all_hashes = []  # type: List[str]
             async for image in get_images(album_ids, True):
                 self.write(net_u32_t.pack(len(image.data)))
                 self.write(image.data)

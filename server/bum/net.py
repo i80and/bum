@@ -1,9 +1,8 @@
-import struct
-from socket import socket
-from typing import AsyncIterable, AsyncIterator, Awaitable, Dict, Tuple, List, TypeVar, \
-    Optional, NamedTuple
 import asyncio
+import struct
 from asyncio import Queue
+from socket import socket
+from typing import AsyncIterable, Dict, Tuple, TypeVar, Optional, NamedTuple
 
 message_header_t = struct.Struct('@III')
 T = TypeVar('T')
@@ -26,7 +25,6 @@ class AsyncSocket(NamedTuple):
 
 
 async def read_message(sock: AsyncSocket) -> Tuple[int, int, bytes]:
-    ev = asyncio.get_event_loop()
     message_header = await sock.reader.readexactly(message_header_t.size)
     message_id, status, message_length = message_header_t.unpack(message_header)
     message_body = await sock.reader.readexactly(message_length)
@@ -44,7 +42,7 @@ async def send_message(sock: AsyncSocket, message_id: int, method: int, message:
 class RPCClient:
     def __init__(self, sock: AsyncSocket) -> None:
         self.sock = sock
-        self.pending = {}  # type: Dict[int, Tuple[Queue[Tuple[int, Optional[bytes]]], bool]]
+        self.pending = {}  # type: Dict[int, Queue[Tuple[int, Optional[bytes]]]]
         self.message_counter = 0
 
     def get_message_id(self) -> int:
@@ -55,15 +53,10 @@ class RPCClient:
     async def subscribe(self,
                         method: int,
                         message: bytes,
-                        subscribe: bool=True,
-                        message_id: int=None) -> AsyncIterable[Tuple[int, Optional[bytes]]]:
-        if message_id is None:
-            message_id = self.get_message_id()
-
+                        message_id: int) -> AsyncIterable[Tuple[int, Optional[bytes]]]:
         await send_message(self.sock, message_id, int(method), message)
         queue = Queue()  # type: Queue[Tuple[int, Optional[bytes]]]
-        l = (queue, subscribe)
-        self.pending[message_id] = l
+        self.pending[message_id] = queue
 
         try:
             while True:
@@ -73,19 +66,19 @@ class RPCClient:
                 if result[1] is None:
                     return
         finally:
-            if message_id in self.pending:
-                del self.pending[message_id]
+            del self.pending[message_id]
 
     def cancel(self, code: int, message_id: int) -> None:
         try:
-            l = self.pending[message_id]
-            l[0].put_nowait((code, None))
-            del self.pending[message_id]
+            self.pending[message_id].put_nowait((code, None))
         except KeyError:
             pass
 
     async def call(self, method: int, message: bytes, message_id: int=None) -> Tuple[int, bytes]:
-        async for result in self.subscribe(method, message, subscribe=False, message_id=message_id):
+        if message_id is None:
+            message_id = self.get_message_id()
+
+        async for result in self.subscribe(method, message, message_id=message_id):
             if result[1] is None:
                 return (result[0], b'')
 
@@ -96,14 +89,7 @@ class RPCClient:
     async def run(self) -> None:
         while True:
             message_id, response, body = await read_message(self.sock)
-
             try:
-                l = self.pending[message_id]
-                if l[1] and len(body) == 0:
-                    l[0].put_nowait((response, None))
-                    del self.pending[message_id]
-                    continue
-
-                l[0].put_nowait((response, body))
+                self.pending[message_id].put_nowait((response, body))
             except KeyError:
                 pass
