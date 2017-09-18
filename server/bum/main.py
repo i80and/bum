@@ -31,6 +31,10 @@ CACHE_CONTROL_TRANSIENT = f'public, max-age={60 * 60}'
 T = TypeVar('T')
 
 
+class TranscodeError(Exception):
+    pass
+
+
 class HashingWorker:
     def __init__(self) -> None:
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -89,6 +93,7 @@ class CoordinatorErrorCodes(enum.IntEnum):
     BAD_METHOD = enum.auto()
     DENIED = enum.auto()
     INTERNAL = enum.auto()
+    TRANSCODE_ERROR = enum.auto()
 
     def to_http_code(self) -> int:
         if self == self.NO_MATCH:
@@ -99,6 +104,8 @@ class CoordinatorErrorCodes(enum.IntEnum):
             return 403
         elif self == self.INTERNAL:
             return 500
+        elif self == self.TRANSCODE_ERROR:
+            return 500
 
         return 200
 
@@ -106,7 +113,7 @@ class CoordinatorErrorCodes(enum.IntEnum):
 class BumTranscode:
     def __init__(self) -> None:
         self.path = './transcoder/build/bum-transcode'
-        self.transcoders = {}  # type: Dict[int, asyncio.subprocess.Process]
+        self.transcoders = {}  # type: Dict[int, Optional[asyncio.subprocess.Process]]
 
     async def get_tags(self, paths: List[str]) -> AsyncGenerator[Tuple[TagsStanza, str], None]:
         for path_chunks in chunks(paths, 100):
@@ -129,8 +136,16 @@ class BumTranscode:
         return output
 
     async def transcode(self, handle: int, path: AnyStr) -> AsyncIterable[bytes]:
+        self.transcoders[handle] = None
+
         child = await self.spawn('transcode-audio', [path])
         assert child.stdout is not None
+
+        # If we got canceled before we could get started, abort
+        if handle not in self.transcoders:
+            child.kill()
+            return
+
         self.transcoders[handle] = child
         try:
             while True:
@@ -141,10 +156,16 @@ class BumTranscode:
                 yield buf
         finally:
             del self.transcoders[handle]
+            if child.returncode != 0:
+                raise TranscodeError(path, child.returncode)
 
     def cancel_transcode(self, handle: int) -> None:
         try:
-            self.transcoders[handle].kill()
+            child = self.transcoders[handle]
+            if child:
+                child.kill()
+            else:
+                del self.transcoders[handle]
         except KeyError:
             pass
 
@@ -339,12 +360,16 @@ def start_web(port: int) -> socket.socket:
             provider = rpc.subscribe(CoordinatorMethods.TRANSCODE,
                                      bytes(song_id, 'utf-8'),
                                      message_id=self.message_id)
-            async for _, chunk in provider:
-                self.write(chunk)
-                self.flush()
+            async for code, chunk in provider:
+                if code != 0:
+                    raise TranscodeError(song_id)
+
+                if chunk:
+                    self.write(chunk)
+                    self.flush()
 
         def on_connection_close(self) -> None:
-            rpc.cancel(self.message_id)
+            rpc.cancel(CoordinatorErrorCodes.OK, self.message_id)
             asyncio.ensure_future(
                 rpc.call(CoordinatorMethods.CANCEL_TRANSCODE, b'', message_id=self.message_id))
 
@@ -463,10 +488,13 @@ class Coordinator:
         return (CoordinatorErrorCodes.OK, result)
 
     async def transcode(self, web_sock: AsyncSocket, message_id: int, song: Song):
-        async for chunk in bum_transcode.transcode(message_id, song.path):
-            await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, chunk)
+        try:
+            async for chunk in bum_transcode.transcode(message_id, song.path):
+                await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, chunk)
 
-        await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, b'')
+            await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, b'')
+        except TranscodeError:
+            await send_message(web_sock, message_id, CoordinatorErrorCodes.TRANSCODE_ERROR, b'')
 
 
 def run() -> None:
