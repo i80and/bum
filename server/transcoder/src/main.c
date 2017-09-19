@@ -6,10 +6,12 @@
 #include <unistd.h>
 
 #include <libavcodec/avcodec.h>
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
-#include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 
 #include <jpeglib.h>
@@ -19,6 +21,7 @@
 #define OUTPUT_BITRATE 128000
 #define OUTPUT_SAMPLE_RATE 48000
 #define OUTPUT_CHANNEL_LAYOUT AV_CH_LAYOUT_STEREO
+#define OUTPUT_SAMPLE_FORMAT AV_SAMPLE_FMT_S16
 #define THUMBNAIL_SIZE 200
 #define HASH_LENGTH 16
 
@@ -27,11 +30,11 @@
 typedef struct {
     AVFrame* resampled_frame;
     AVCodecContext* encode_context;
-    SwrContext* swr;
     AVFormatContext* output_format_context;
 
-    AVRational input_time_base;
-    AVRational output_time_base;
+    AVFilterGraph* filter_graph;
+    AVFilterContext* buffersrc_ctx;
+    AVFilterContext* buffersink_ctx;
 } TranscodeContext;
 
 typedef struct {
@@ -103,7 +106,6 @@ int encode(AVCodecContext* avctx, const AVFrame* frame,
 
 int handle_encoded(void* raw_ctx, AVPacket* pkt) {
     TranscodeContext* ctx = (TranscodeContext*)raw_ctx;
-    av_packet_rescale_ts(pkt, ctx->input_time_base, ctx->output_time_base);
     verify_ffmpeg(av_interleaved_write_frame(ctx->output_format_context, pkt));
     return 0;
 }
@@ -111,26 +113,23 @@ int handle_encoded(void* raw_ctx, AVPacket* pkt) {
 int handle_decoded(void* raw_ctx, AVFrame* frame) {
     TranscodeContext* ctx = (TranscodeContext*)raw_ctx;
 
-    // Some containers (e.g. WAV) only provide channel count, not layout
-    if (!frame->channel_layout) {
-        frame->channel_layout = av_get_default_channel_layout(frame->channels);
-    }
+    verify_ffmpeg(av_buffersrc_add_frame_flags(ctx->buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF));
 
-    if (ctx->swr == NULL) {
-        // Prepare the resampler. Do this lazily, since some container formats
-        // only provide the necessary information with the first packet.
-        SwrContext* swr = swr_alloc();
-        verify(swr != NULL);
-        verify_ffmpeg(swr_config_frame(swr, ctx->resampled_frame, frame));
-        verify_ffmpeg(swr_init(swr));
-        ctx->swr = swr;
-    }
+    while (true) {
+        AVFrame* resampled_frame = av_frame_alloc();
+        int ret = av_buffersink_get_frame(ctx->buffersink_ctx, resampled_frame);
+        resampled_frame->best_effort_timestamp = resampled_frame->pts;
 
-    verify_ffmpeg(swr_convert_frame(ctx->swr, NULL, frame));
+        if (ret == AVERROR(EAGAIN)) {
+            av_frame_unref(frame);
+            av_frame_unref(resampled_frame);
+            return 0;
+        }
 
-    while (swr_get_delay(ctx->swr, frame->sample_rate) >= ctx->encode_context->frame_size) {
-        verify_ffmpeg(swr_convert_frame(ctx->swr, ctx->resampled_frame, NULL));
-        verify_ffmpeg(encode(ctx->encode_context, ctx->resampled_frame, handle_encoded, ctx));
+        verify_ffmpeg(ret);
+        verify_ffmpeg(encode(ctx->encode_context, resampled_frame, handle_encoded, ctx));
+        av_frame_unref(frame);
+        av_frame_unref(resampled_frame);
     }
 
     return 0;
@@ -141,6 +140,61 @@ int handle_decoded_cover(void* raw_ctx, AVFrame* frame) {
     ctx->frame = frame;
 
     return STOP_AND_YIELD_FRAME;
+}
+
+const char* filter_description = "aresample=48000,aformat=sample_fmts=s16:channel_layouts=stereo,asetnsamples=n=960:p=0";
+int initialize_audio_filter(const AVStream* inputStream, TranscodeContext* ctx) {
+    char args[512];
+
+    avfilter_register_all();
+
+    const AVFilter* buffersrc = avfilter_get_by_name("abuffer");
+    const AVFilter* buffersink = avfilter_get_by_name("abuffersink");
+    AVFilterInOut* outputs = avfilter_inout_alloc();
+    AVFilterInOut* inputs = avfilter_inout_alloc();
+    ctx->filter_graph = avfilter_graph_alloc();
+
+    verify(buffersrc != NULL);
+    verify(buffersink != NULL);
+    verify(outputs != NULL);
+    verify(inputs != NULL);
+    verify(ctx->filter_graph != NULL);
+
+    const enum AVSampleFormat out_sample_fmts[] = {OUTPUT_SAMPLE_FORMAT, AV_SAMPLE_FMT_NONE};
+    const int64_t out_channel_layouts[] = {OUTPUT_CHANNEL_LAYOUT, -1};
+    const int out_sample_rates[] = {OUTPUT_SAMPLE_RATE, -1};
+
+    snprintf(args, sizeof(args), "time_base=%d/%d:sample_rate=%d:sample_fmt=%s:channel_layout=0x%" PRIx64,
+        inputStream->time_base.num, inputStream->time_base.den,
+        inputStream->codecpar->sample_rate,
+        av_get_sample_fmt_name(inputStream->codecpar->format),
+        inputStream->codecpar->channel_layout);
+    verify_ffmpeg(avfilter_graph_create_filter(&ctx->buffersrc_ctx, buffersrc, "in", args, NULL, ctx->filter_graph));
+    verify_ffmpeg(avfilter_graph_create_filter(&ctx->buffersink_ctx, buffersink, "out", NULL, NULL, ctx->filter_graph));
+    verify_ffmpeg(av_opt_set_int_list(ctx->buffersink_ctx, "sample_fmts", out_sample_fmts, -1, AV_OPT_SEARCH_CHILDREN));
+    verify_ffmpeg(av_opt_set_int_list(ctx->buffersink_ctx, "channel_layouts", out_channel_layouts, -1, AV_OPT_SEARCH_CHILDREN));
+    verify_ffmpeg(av_opt_set_int_list(ctx->buffersink_ctx, "sample_rates", out_sample_rates, -1, AV_OPT_SEARCH_CHILDREN));
+
+    // Endpoints for the filter graph. */
+    outputs->name = av_strdup("in");
+    outputs->filter_ctx = ctx->buffersrc_ctx;
+    outputs->pad_idx = 0;
+    outputs->next = NULL;
+
+    inputs->name = av_strdup("out");
+    inputs->filter_ctx = ctx->buffersink_ctx;
+    inputs->pad_idx = 0;
+    inputs->next = NULL;
+
+    int ret = avfilter_graph_parse_ptr(ctx->filter_graph, filter_description, &inputs, &outputs, NULL);
+    if (ret < 0) { verify_ffmpeg(ret); }
+
+    verify_ffmpeg(avfilter_graph_config(ctx->filter_graph, NULL));
+
+    AVFilterLink* outlink = ctx->buffersink_ctx->inputs[0];
+    av_get_channel_layout_string(args, sizeof(args), -1, outlink->channel_layout);
+
+    return 0;
 }
 
 int transcode_audio(char* path) {
@@ -200,7 +254,7 @@ int transcode_audio(char* path) {
 
     AVCodecContext* encode_context = avcodec_alloc_context3(encode_codec);
     verify(encode_context != NULL);
-    encode_context->sample_fmt = AV_SAMPLE_FMT_S16;
+    encode_context->sample_fmt = OUTPUT_SAMPLE_FORMAT;
     encode_context->bit_rate = OUTPUT_BITRATE;
     encode_context->sample_rate = OUTPUT_SAMPLE_RATE;
     encode_context->channel_layout = OUTPUT_CHANNEL_LAYOUT;
@@ -212,7 +266,6 @@ int transcode_audio(char* path) {
     TranscodeContext ctx;
     ctx.encode_context = encode_context;
     ctx.output_format_context = output_format_context;
-    ctx.swr = NULL;
 
     // Setup our encoding frame
     ctx.resampled_frame = av_frame_alloc();
@@ -227,8 +280,7 @@ int transcode_audio(char* path) {
     output_stream->time_base.num = 1;
     verify_ffmpeg(avformat_write_header(ctx.output_format_context, NULL));
 
-    ctx.input_time_base = input_stream->time_base;
-    ctx.output_time_base = output_stream->time_base;
+    initialize_audio_filter(input_stream, &ctx);
 
     // Transcode loop
     while(1) {
@@ -267,10 +319,6 @@ next:
     avcodec_close(encode_context);
     avformat_free_context(output_format_context);
     avformat_close_input(&decode_format);
-
-    if (ctx.swr != NULL) {
-        swr_free(&ctx.swr);
-    }
 
     return 0;
 }

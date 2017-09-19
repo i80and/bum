@@ -16,7 +16,7 @@ else
 $(info debugging:  OFF)
 endif
 
-FFMPEG_LIBS=libavutil libavformat libavcodec libswresample libswscale
+FFMPEG_LIBS=libavutil libavformat libavcodec libswscale libavfilter
 LIBS=-lz -lm -ljpeg `pkg-config --libs ${FFMPEG_LIBS}`
 CFLAGS=-std=c99 -Wall -Wextra -Wshadow -Wno-unused-parameter ${OPT_FLAG} `pkg-config --cflags ${FFMPEG_LIBS}`
 
