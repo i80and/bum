@@ -32,6 +32,9 @@ typedef struct {
     AVCodecContext* encode_context;
     AVFormatContext* output_format_context;
 
+    AVRational input_time_base;
+    AVRational output_time_base;
+
     AVFilterGraph* filter_graph;
     AVFilterContext* buffersrc_ctx;
     AVFilterContext* buffersink_ctx;
@@ -106,6 +109,7 @@ int encode(AVCodecContext* avctx, const AVFrame* frame,
 
 int handle_encoded(void* raw_ctx, AVPacket* pkt) {
     TranscodeContext* ctx = (TranscodeContext*)raw_ctx;
+    av_packet_rescale_ts(pkt, ctx->input_time_base, ctx->output_time_base);
     verify_ffmpeg(av_interleaved_write_frame(ctx->output_format_context, pkt));
     return 0;
 }
@@ -118,7 +122,6 @@ int handle_decoded(void* raw_ctx, AVFrame* frame) {
     while (true) {
         AVFrame* resampled_frame = av_frame_alloc();
         int ret = av_buffersink_get_frame(ctx->buffersink_ctx, resampled_frame);
-        resampled_frame->best_effort_timestamp = resampled_frame->pts;
 
         if (ret == AVERROR(EAGAIN)) {
             av_frame_unref(frame);
@@ -280,6 +283,10 @@ int transcode_audio(char* path) {
     output_stream->time_base.num = 1;
     verify_ffmpeg(avformat_write_header(ctx.output_format_context, NULL));
 
+    // I... don't understand why this garbage is necessary?
+    ctx.input_time_base = input_stream->time_base;
+    ctx.input_time_base.den = OUTPUT_SAMPLE_RATE;
+    ctx.output_time_base = output_stream->time_base;
     initialize_audio_filter(input_stream, &ctx);
 
     // Transcode loop
