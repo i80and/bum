@@ -394,9 +394,11 @@ def start_web(port: int) -> socket.socket:
 
                     raise TranscodeError(song_id, code)
 
-                if chunk:
-                    self.write(chunk)
-                    self.flush()
+                if not chunk:
+                    break
+
+                self.write(chunk)
+                self.flush()
 
             self.done = True
 
