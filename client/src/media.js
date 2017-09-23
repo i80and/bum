@@ -121,7 +121,6 @@ export class MediaLibrary {
     }
 
     async shuffle() {
-        await this.refresh()
         shuffle(this.songs)
         return this.songs
     }

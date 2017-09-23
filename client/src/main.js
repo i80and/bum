@@ -9,13 +9,14 @@ class Player {
         this.paused = null
         this.library = library
         this.playlist = []
+        this.playlistPosition = 0
         this.onplay = () => {}
 
         this._initElement()
     }
 
     play(songs) {
-        this.playlist = songs.reverse()
+        this.playlist = songs
         this.doPlay()
     }
 
@@ -35,7 +36,21 @@ class Player {
     }
 
     skip() {
+        this.playlistPosition += 1
         this.doPlay()
+    }
+
+    back() {
+        if (!this.element) {
+            return
+        }
+
+        if (this.element.currentTime >= 4 || this.playlistPosition === 0) {
+            this.element.currentTime = 0
+        } else {
+            this.playlistPosition -= 1
+            this.doPlay()
+        }
     }
 
     shuffle() {
@@ -49,7 +64,7 @@ class Player {
     doPlay() {
         this.paused = null
         this.playing = null
-        if(this.playlist.length === 0) {
+        if(this.playlistPosition >= this.playlist.length) {
             this.onplay()
 
             // Don't pause an errored stream. This can cause a nasty
@@ -60,7 +75,7 @@ class Player {
             return
         }
 
-        const song = this.playlist.pop()
+        const song = this.playlist[this.playlistPosition]
         this.playing = song
         this.element.src = this.library.songUrl(song)
         this.element.play()
@@ -114,6 +129,7 @@ class CoverSwitcher {
 }
 
 function main() {
+    const backButton = document.getElementById('back-button')
     const playButton = document.getElementById('play-button')
     const skipButton = document.getElementById('skip-button')
     const labelElement = document.getElementById('caption')
@@ -144,6 +160,10 @@ function main() {
             playButton.className = 'fa fa-play'
         }
     }
+
+    backButton.addEventListener('click', function() {
+        player.back()
+    })
 
     playButton.addEventListener('click', function() {
         if(player.playing) {

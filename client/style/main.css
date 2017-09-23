@@ -46,15 +46,15 @@ button#play-button {
     border-radius: 100px;
 }
 
-button#skip-button {
+button.side-button {
     border: none;
 }
 
-button#skip-button:hover {
+button.side-button:hover {
     background-color: inherit;
 }
 
-button#skip-button:active {
+button.side-button:active {
     background-color: inherit;
     color: #99f;
 }
