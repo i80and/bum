@@ -17,7 +17,7 @@ class Player {
 
     play(songs) {
         this.playlist = songs
-        this.doPlay()
+        this.doPlay(0)
     }
 
     togglePause() {
@@ -36,8 +36,7 @@ class Player {
     }
 
     skip() {
-        this.playlistPosition += 1
-        this.doPlay()
+        this.doPlay(1)
     }
 
     back() {
@@ -48,8 +47,7 @@ class Player {
         if (this.element.currentTime >= 4 || this.playlistPosition === 0) {
             this.element.currentTime = 0
         } else {
-            this.playlistPosition -= 1
-            this.doPlay()
+            this.doPlay(-1)
         }
     }
 
@@ -61,7 +59,7 @@ class Player {
         })
     }
 
-    doPlay() {
+    doPlay(skipNumber) {
         this.paused = null
         this.playing = null
         if(this.playlistPosition >= this.playlist.length) {
@@ -75,6 +73,7 @@ class Player {
             return
         }
 
+        this.playlistPosition += skipNumber
         const song = this.playlist[this.playlistPosition]
         this.playing = song
         this.element.src = this.library.songUrl(song)
@@ -88,13 +87,13 @@ class Player {
         this.element.controls = false
 
         this.element.onended = () => {
-            this.doPlay()
+            this.doPlay(1)
         }
 
         this.element.onerror = () => {
             const id = this.playing? this.playing.id : 'unknown'
             console.error(`Error playing ${id}`)
-            this.doPlay()
+            this.doPlay(1)
         }
     }
 }
