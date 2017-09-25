@@ -86,6 +86,8 @@ export class MediaLibrary {
 
         // this.artistIndex = new Map()
         this.albumIndex = new Map()
+
+        this.onUpdate = () => {}
     }
 
     async refresh() {
@@ -118,6 +120,7 @@ export class MediaLibrary {
         this.albums = await this.getAlbums()
 
         await this.getThumbnails()
+        this.onUpdate()
     }
 
     async shuffle() {

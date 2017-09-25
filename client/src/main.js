@@ -137,8 +137,6 @@ function main() {
     const library = new media.MediaLibrary('/api')
     const player = new Player(library)
 
-    library.refresh()
-
     player.onplay = () => {
         const song = player.playing || player.paused
 
@@ -201,6 +199,9 @@ function main() {
     albumsButton.addEventListener('click', function() {
         albumsView.set({ show: !albumsView.get('show') })
     })
+
+    library.onUpdate = () => albumsView.set({ library })
+    library.refresh()
 }
 
 window.addEventListener('DOMContentLoaded', function() {
