@@ -16,6 +16,7 @@ class Player {
     }
 
     play(songs) {
+        this.playlistPosition = 0
         this.playlist = songs
         this.doPlay(0)
     }
@@ -62,6 +63,8 @@ class Player {
     doPlay(skipNumber) {
         this.paused = null
         this.playing = null
+        this.playlistPosition += skipNumber
+
         if(this.playlistPosition >= this.playlist.length) {
             this.onplay()
 
@@ -73,7 +76,6 @@ class Player {
             return
         }
 
-        this.playlistPosition += skipNumber
         const song = this.playlist[this.playlistPosition]
         this.playing = song
         this.element.src = this.library.songUrl(song)

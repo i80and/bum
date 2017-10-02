@@ -284,6 +284,10 @@ class MediaDatabase:
             async for stanza, path in bum_transcode.get_tags(paths):
                 await self.load_file(path, stanza, ctx, hashing_worker)
 
+        # Finalize the last album
+        if ctx.album:
+            ctx.album.tracks.sort(key=lambda track: self.songs[track].trackno)
+
 
 def start_web(port: int) -> socket.socket:
     child_sock, parent_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0)
