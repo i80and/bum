@@ -12,6 +12,7 @@
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
+#include <libavutil/channel_layout.h>
 #include <libswscale/swscale.h>
 
 #include <jpeglib.h>
@@ -149,8 +150,6 @@ const char* filter_description = "aresample=48000,aformat=sample_fmts=s16:channe
 int initialize_audio_filter(const AVStream* inputStream, TranscodeContext* ctx) {
     char args[512];
 
-    avfilter_register_all();
-
     const AVFilter* buffersrc = avfilter_get_by_name("abuffer");
     const AVFilter* buffersink = avfilter_get_by_name("abuffersink");
     AVFilterInOut* outputs = avfilter_inout_alloc();
@@ -223,7 +222,7 @@ int transcode_audio(char* path) {
     // Find the decoder for the stream
     const AVStream* input_stream = decode_format->streams[audio_stream];
     const AVCodecParameters* codecpar = input_stream->codecpar;
-    AVCodec* decode_codec = avcodec_find_decoder(codecpar->codec_id);
+    const AVCodec* decode_codec = avcodec_find_decoder(codecpar->codec_id);
     if(decode_codec == NULL) {
         fprintf(stderr, "Unsupported codec\n");
         return 1;
@@ -242,7 +241,7 @@ int transcode_audio(char* path) {
     // Open muxer
     AVFormatContext* output_format_context = avformat_alloc_context();
     verify(output_format_context != NULL);
-    AVOutputFormat* output_format = av_guess_format("webm", NULL, NULL);
+    const AVOutputFormat* output_format = av_guess_format("webm", NULL, NULL);
     verify(output_format != NULL);
     AVStream* output_stream = avformat_new_stream(output_format_context, encode_codec);
     verify(output_stream != NULL);
@@ -253,7 +252,7 @@ int transcode_audio(char* path) {
     // Set up codec contexts
     AVCodecContext* decode_context = avcodec_alloc_context3(decode_codec);
     verify(!avcodec_parameters_to_context(decode_context, codecpar));
-    av_codec_set_pkt_timebase(decode_context, input_stream->time_base);
+    // av_codec_set_pkt_timebase(decode_context, input_stream->time_base);
 
     AVCodecContext* encode_context = avcodec_alloc_context3(encode_codec);
     verify(encode_context != NULL);
@@ -357,7 +356,7 @@ int get_cover(const char* path, AVFrame** out_frame) {
 
     const AVStream* input_stream = decode_format->streams[cover_stream];
     const AVCodecParameters* codecpar = input_stream->codecpar;
-    AVCodec* decode_codec = avcodec_find_decoder(codecpar->codec_id);
+    const AVCodec* decode_codec = avcodec_find_decoder(codecpar->codec_id);
     if(decode_codec == NULL) {
         ret = 1;
         goto cleanup;
@@ -500,7 +499,6 @@ int get_covers(char* const* paths, int n_paths, bool thumbnail) {
 
 int main(int argc, char** argv) {
     verify_warn(pledge("stdio rpath", NULL) == 0);
-    av_register_all();
 
     if (argc <= 2) {
         return 1;
