@@ -57,9 +57,8 @@ class Worker:
     def __enter__(self) -> 'Worker':
         return self
 
-    def __exit__(self, *args: Any) -> bool:
+    def __exit__(self, *args: Any) -> None:
         self.close()
-        return False
 
     @staticmethod
     def _hash(data: bytes, digest_size: int) -> str:
@@ -125,7 +124,7 @@ class CoordinatorErrorCodes(enum.IntEnum):
 class BumTranscode:
     def __init__(self) -> None:
         self.path = './transcoder/build/bum-transcode'
-        self.transcoders = {}  # type: Dict[int, Optional[asyncio.subprocess.Process]]
+        self.transcoders: dict[int, Optional[asyncio.subprocess.Process]] = {}
 
     async def get_tags(self, paths: List[str]) -> AsyncGenerator[Tuple[TagsStanza, str], None]:
         for path_chunks in chunks(paths, 100):
@@ -198,16 +197,16 @@ class MediaDatabase:
 
     class MediaLoadContext:
         def __init__(self) -> None:
-            self.album = None  # type: Optional[Album]
-            self.current_album_title_bytes = None  # type: Optional[bytes]
+            self.album: Optional[Album] = None
+            self.current_album_title_bytes: Optional[bytes] = None
 
     def __init__(self, root: str) -> None:
         self.root = root
-        self.albums = {}  # type: Dict[str, Album]
-        self.songs = {}  # type: Dict[str, Song]
+        self.albums: dict[str, Album] = {}
+        self.songs: dict[str, Song] = {}
 
     async def scan(self) -> None:
-        paths = []  # type: List[str]
+        paths: list[str] = []
         for root, dirs, files in os.walk(self.root):
             for filename in files:
                 _, ext = os.path.splitext(filename)
@@ -301,11 +300,11 @@ def start_web(port: int) -> socket.socket:
     tornado.platform.asyncio.AsyncIOMainLoop().install()
 
     hashing_worker = Worker()
-    image_cache = {}  # type: Dict[Tuple[bool, str], Image]
-    rpc = None  # type: Optional[RPCClient]
+    image_cache: dict[Tuple[bool, str], Image] = {}
+    rpc: Optional[RPCClient] = None
 
     async def get_images(album_ids: List[str], thumbnail: bool) -> AsyncIterable[Image]:
-        missing = []  # type: List[str]
+        missing: list[str] = []
 
         for album_id in album_ids:
             key = (thumbnail, album_id)
@@ -537,7 +536,7 @@ class Coordinator:
 
         return (CoordinatorErrorCodes.OK, result)
 
-    async def transcode(self, web_sock: AsyncSocket, message_id: int, song: Song):
+    async def transcode(self, web_sock: AsyncSocket, message_id: int, song: Song) -> None:
         try:
             async for chunk in bum_transcode.transcode(message_id, song.path):
                 await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, chunk)
@@ -583,7 +582,7 @@ def run() -> None:
                 elif method == CoordinatorMethods.THUMBNAIL or method == CoordinatorMethods.COVER:
                     response_code = CoordinatorErrorCodes.OK
                     album_ids = json.loads(str(raw_body, 'utf-8'))
-                    covers = []  # type: List[str]
+                    covers: list[str] = []
                     for album_id in album_ids:
                         album = db.albums.get(album_id, None)
                         if album is not None:
