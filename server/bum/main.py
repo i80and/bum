@@ -11,15 +11,17 @@ import socket
 import struct
 import sys
 import time
+from pathlib import Path
 from typing import Any, AsyncGenerator, AnyStr, Optional, Tuple, TypeVar, Iterable, List, Dict, \
     AsyncIterable, NamedTuple
 
+import mutagen
 import pypledge
 import tornado.platform.asyncio
 import tornado.web
 
 from bum.net import AsyncSocket, RPCClient, send_message, read_message
-from bum.media import Song, Album, TagsStanza
+from bum.media import Song, Album
 
 logger = logging.getLogger('bum')
 u64_t = struct.Struct('=Q')
@@ -126,18 +128,6 @@ class BumTranscode:
         self.path = './transcoder/build/bum-transcode'
         self.transcoders: dict[int, Optional[asyncio.subprocess.Process]] = {}
 
-    async def get_tags(self, paths: List[str]) -> AsyncGenerator[Tuple[TagsStanza, str], None]:
-        for path_chunks in chunks(paths, 100):
-            child = await self.spawn('get-tags', path_chunks)
-            assert child.stdout is not None
-            output = await child.stdout.read()
-
-            for line, path in zip(output.split(b'\n'), path_chunks):
-                if not line:
-                    continue
-
-                yield (TagsStanza(*line.split(b'\x1c')), path)
-
     async def get_cover_stream(self, paths: List[str], thumbnail: bool) -> bytes:
         method = 'get-thumbnails' if thumbnail else 'get-cover'
         child = await self.spawn(method, paths)
@@ -219,35 +209,42 @@ class MediaDatabase:
 
     async def load_file(self,
                         path: str,
-                        stanza: TagsStanza,
                         ctx: MediaLoadContext,
                         hashing_worker: Worker) -> None:
         dirname = os.path.dirname(path)
 
+        data = mutagen.File(path, easy=True)
+        raw_disc = data.get("discnumber", [""])[0]
+        raw_track = data.get("tracknumber", [""])[0]
+        raw_date = data.get("date", [""])[0]
+        raw_album = data.get("album", [""])[0]
+        raw_artist = data.get("artist", [""])[0]
+        raw_title = data.get("title", [""])[0]
+
         try:
-            disc_string = stanza.disc_string.split(b'/')[0] \
-                if b'/' in stanza.disc_string else stanza.disc_string
+            disc_string = raw_disc.split('/')[0] \
+                if '/' in raw_disc else raw_disc
             discno = int(disc_string)
         except ValueError:
             discno = 1
 
         try:
-            track_string = stanza.track_string.split(b'/')[0] \
-                if b'/' in stanza.track_string else stanza.track_string
+            track_string = raw_track.split('/')[0] \
+                if '/' in raw_track else raw_track
             trackno = int(track_string)
         except ValueError:
             trackno = -1
 
         try:
-            year = int(stanza.date_string)
+            year = int(raw_date)
         except ValueError:
             year = 0
 
-        if not ctx.album or ctx.current_album_title_bytes != stanza.album:
-            ctx.current_album_title_bytes = stanza.album
+        if not ctx.album or ctx.current_album_title_bytes != raw_album:
+            ctx.current_album_title_bytes = raw_album
             hasher = hashlib.blake2b(digest_size=16)
-            hasher.update(stanza.album)
-            hasher.update(stanza.artist)
+            hasher.update(bytes(raw_album, "utf-8"))
+            hasher.update(bytes(raw_artist, "utf-8"))
             album_id = hasher.hexdigest()
 
             cover_filename = path
@@ -260,28 +257,25 @@ class MediaDatabase:
             if ctx.album:
                 ctx.album.tracks.sort(key=lambda track: self.songs[track].trackno)
 
-            ctx.album = Album(album_id,
-                              str(stanza.album, 'utf-8'),
-                              str(stanza.artist, 'utf-8'),
-                              year, [], cover_filename)
+            ctx.album = Album(album_id, raw_album, raw_artist, year, [], cover_filename)
             self.albums[ctx.album.id] = ctx.album
 
         hasher = hashlib.blake2b(digest_size=16)
-        hasher.update(stanza.artist)
-        hasher.update(stanza.title)
+        hasher.update(bytes(raw_artist, "utf-8"))
+        hasher.update(bytes(raw_title, "utf-8"))
         song_id = '{}-{}-{}-{}'.format(hasher.hexdigest(), year, trackno, discno)
         song = Song(song_id,
                     path,
-                    str(stanza.title, 'utf-8'),
-                    str(stanza.artist, 'utf-8'), trackno, discno, ctx.album.id)
+                    raw_title,
+                    raw_artist, trackno, discno, ctx.album.id)
         self.songs[song.id] = song
         ctx.album.tracks.append(song.id)
 
     async def load_files(self, paths: List[str]) -> None:
         ctx = self.MediaLoadContext()
         with Worker() as hashing_worker:
-            async for stanza, path in bum_transcode.get_tags(paths):
-                await self.load_file(path, stanza, ctx, hashing_worker)
+            for path in paths:
+                await self.load_file(path, ctx, hashing_worker)
 
         # Finalize the last album
         if ctx.album:

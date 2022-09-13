@@ -330,68 +330,6 @@ next:
     return 0;
 }
 
-int print_tags_for_file(const char* path) {
-    AVFormatContext* decode_format = NULL;
-    int ret = avformat_open_input(&decode_format, path, NULL, NULL);
-    if (ret < 0) {
-        goto cleanup;
-    }
-
-    ret = avformat_find_stream_info(decode_format, NULL);
-    if (ret < 0) {
-        goto cleanup;
-    }
-
-    AVDictionaryEntry const* elem = av_dict_get(decode_format->metadata, "title", NULL, 0);
-    const char* title = (elem != NULL)? elem->value : "";
-
-    elem = av_dict_get(decode_format->metadata, "artist", NULL, 0);
-    if (elem == NULL) {
-        elem = av_dict_get(decode_format->metadata, "album_artist", NULL, 0);
-    }
-
-    const char* artist = (elem != NULL)? elem->value : "";
-
-    elem = av_dict_get(decode_format->metadata, "album", NULL, 0);
-    const char* album = (elem != NULL)? elem->value : "";
-
-    elem = av_dict_get(decode_format->metadata, "track", NULL, 0);
-    const char* track_string = (elem != NULL)? elem->value : "";
-
-    elem = av_dict_get(decode_format->metadata, "disc", NULL, 0);
-    const char* disc_string = (elem != NULL)? elem->value : "";
-
-    elem = av_dict_get(decode_format->metadata, "date", NULL, 0);
-    const char* date_string = (elem != NULL)? elem->value : "";
-
-#define FS "\x1c"
-#define P "%s"
-    printf(P FS P FS P FS P FS P FS P "\n", title, artist, album, track_string, disc_string, date_string);
-#undef FS
-#undef P
-
-cleanup:
-    if (decode_format != NULL) {
-        avformat_close_input(&decode_format);
-    }
-
-    if (ret < 0) {
-        fprintf(stderr, "Error getting tags: %s %s\n", path, av_err2str(ret));
-        printf("error\n");
-    }
-
-    return 0;
-}
-
-int get_tags(char* const* paths, int n_paths) {
-    for (int i = 0; i < n_paths; i += 1) {
-        const char* path = paths[i];
-        print_tags_for_file(path);
-    }
-
-    return 0;
-}
-
 int get_cover(const char* path, AVFrame** out_frame) {
     AVFormatContext* decode_format = NULL;
     AVCodecContext* decode_context = NULL;
@@ -570,8 +508,6 @@ int main(int argc, char** argv) {
 
     if (strcmp(argv[1], "transcode-audio") == 0) {
         return transcode_audio(argv[2]);
-    } else if(strcmp(argv[1], "get-tags") == 0) {
-        return get_tags(argv + 2, argc - 2);
     } else if(strcmp(argv[1], "get-thumbnails") == 0) {
         return get_covers(argv + 2, argc - 2, true);
     } else if(strcmp(argv[1], "get-cover") == 0) {

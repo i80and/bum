@@ -35,12 +35,3 @@ class Album(NamedTuple):
             'year': self.year,
             'tracks': self.tracks,
         }
-
-
-class TagsStanza(NamedTuple):
-    title: bytes
-    artist: bytes
-    album: bytes
-    track_string: bytes
-    disc_string: bytes
-    date_string: bytes
