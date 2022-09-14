@@ -1,9 +1,10 @@
+from pathlib import Path
 from typing import List, NamedTuple
 
 
 class Song(NamedTuple):
     id: str
-    path: str
+    path: Path
     title: str
     artist: str
     trackno: int
@@ -25,7 +26,7 @@ class Album(NamedTuple):
     album_artist: str
     year: int
     tracks: List[str]
-    cover_path: str
+    cover_path: Path
 
     def to_json(self) -> object:
         return {

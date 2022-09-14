@@ -11,7 +11,8 @@ import socket
 import struct
 import sys
 import time
-from typing import (Any, AnyStr, AsyncIterable, Iterable, NamedTuple, Optional,
+from pathlib import Path
+from typing import (AsyncIterable, Iterable, NamedTuple, Optional, Sequence,
                     Tuple, TypeVar)
 
 import mutagen
@@ -61,7 +62,7 @@ class Worker:
     def __enter__(self) -> "Worker":
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         self.close()
 
     @staticmethod
@@ -127,10 +128,10 @@ class CoordinatorErrorCodes(enum.IntEnum):
 
 class BumTranscode:
     def __init__(self) -> None:
-        self.path = "./transcoder/build/bum-transcode"
+        self.path = Path("./transcoder/build/bum-transcode")
         self.transcoders: dict[int, Optional[asyncio.subprocess.Process]] = {}
 
-    async def get_cover_stream(self, paths: list[str], thumbnail: bool) -> bytes:
+    async def get_cover_stream(self, paths: list[Path], thumbnail: bool) -> bytes:
         method = "get-thumbnails" if thumbnail else "get-cover"
         child = await self.spawn(method, paths)
         assert child.stdout is not None
@@ -138,7 +139,7 @@ class BumTranscode:
 
         return output
 
-    async def transcode(self, handle: int, path: AnyStr) -> AsyncIterable[bytes]:
+    async def transcode(self, handle: int, path: Path) -> AsyncIterable[bytes]:
         self.transcoders[handle] = None
 
         child = await self.spawn("transcode-audio", [path])
@@ -172,8 +173,16 @@ class BumTranscode:
         except KeyError:
             pass
 
-    async def spawn(self, cmd: str, cmd_args: list[Any]) -> asyncio.subprocess.Process:
-        args_list = [self.path, cmd] + cmd_args
+    async def spawn(
+        self,
+        cmd: str,
+        cmd_args: Sequence[str | bytes | os.PathLike[str] | os.PathLike[bytes]],
+    ) -> asyncio.subprocess.Process:
+        args_list: list[str | bytes | os.PathLike[str] | os.PathLike[bytes]] = [
+            self.path,
+            cmd,
+            *cmd_args,
+        ]
         return await asyncio.create_subprocess_exec(
             *args_list,
             stdout=asyncio.subprocess.PIPE,
@@ -204,27 +213,25 @@ class MediaDatabase:
             self.album: Optional[Album] = None
             self.current_album_title_bytes: Optional[bytes] = None
 
-    def __init__(self, root: str) -> None:
+    def __init__(self, root: Path) -> None:
         self.root = root
         self.albums: dict[str, Album] = {}
         self.songs: dict[str, Song] = {}
 
     async def scan(self) -> None:
-        paths: list[str] = []
-        for root, dirs, files in os.walk(self.root):
-            for filename in files:
-                _, ext = os.path.splitext(filename)
-                if ext not in self.FILE_EXTENSIONS:
-                    continue
+        paths: list[Path] = []
+        for path in self.root.glob("**/*"):
+            if path.suffix not in self.FILE_EXTENSIONS:
+                continue
 
-                paths.append(os.path.join(root, filename))
+            paths.append(path)
 
         await self.load_files(paths)
 
     async def load_file(
-        self, path: str, ctx: MediaLoadContext, hashing_worker: Worker
+        self, path: Path, ctx: MediaLoadContext, hashing_worker: Worker
     ) -> None:
-        dirname = os.path.dirname(path)
+        dirname = path.parent
 
         try:
             data = mutagen.File(path, easy=True)
@@ -268,8 +275,8 @@ class MediaDatabase:
 
             cover_filename = path
             for candidate_filename in self.COVER_FILES:
-                candidate_path = os.path.join(dirname, candidate_filename)
-                if os.path.isfile(candidate_path):
+                candidate_path = dirname.joinpath(candidate_filename)
+                if candidate_path.is_file():
                     cover_filename = candidate_path
                     break
 
@@ -287,7 +294,7 @@ class MediaDatabase:
         self.songs[song.id] = song
         ctx.album.tracks.append(song.id)
 
-    async def load_files(self, paths: list[str]) -> None:
+    async def load_files(self, paths: list[Path]) -> None:
         ctx = self.MediaLoadContext()
         with Worker() as hashing_worker:
             for path in paths:
@@ -585,7 +592,7 @@ def run() -> None:
     web_raw_sock = start_web(8000)
 
     sandbox(["stdio", "unix", "proc", "exec", "rpath"])
-    db = MediaDatabase(sys.argv[1])
+    db = MediaDatabase(Path(sys.argv[1]))
 
     async def start() -> None:
         web_sock = await AsyncSocket.create(web_raw_sock)
@@ -615,13 +622,13 @@ def run() -> None:
                 ):
                     response_code = CoordinatorErrorCodes.OK
                     album_ids = json.loads(str(raw_body, "utf-8"))
-                    covers: list[str] = []
+                    covers: list[Path] = []
                     for album_id in album_ids:
                         album = db.albums.get(album_id, None)
                         if album is not None:
                             covers.append(album.cover_path)
                         else:
-                            covers.append("")
+                            covers.append(Path(""))
                     thumbnail = method == CoordinatorMethods.THUMBNAIL
                     response_body = await bum_transcode.get_cover_stream(
                         covers, thumbnail
