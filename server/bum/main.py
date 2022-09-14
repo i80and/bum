@@ -211,7 +211,7 @@ class MediaDatabase:
     class MediaLoadContext:
         def __init__(self) -> None:
             self.album: Optional[Album] = None
-            self.current_album_title_bytes: Optional[bytes] = None
+            self.current_album_title: Optional[str] = None
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -266,8 +266,8 @@ class MediaDatabase:
         except ValueError:
             year = 0
 
-        if not ctx.album or ctx.current_album_title_bytes != raw_album:
-            ctx.current_album_title_bytes = raw_album
+        if not ctx.album or ctx.current_album_title != raw_album:
+            ctx.current_album_title = raw_album
             hasher = hashlib.blake2b(digest_size=16)
             hasher.update(bytes(raw_album, "utf-8"))
             hasher.update(bytes(raw_artist, "utf-8"))
