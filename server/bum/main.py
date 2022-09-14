@@ -213,7 +213,12 @@ class MediaDatabase:
                         hashing_worker: Worker) -> None:
         dirname = os.path.dirname(path)
 
-        data = mutagen.File(path, easy=True)
+        try:
+            data = mutagen.File(path, easy=True)
+        except mutagen.MutagenError as err:
+            logger.error("Error loading %s: \"%s\"", path, err)
+            return
+
         raw_disc = data.get("discnumber", [""])[0]
         raw_track = data.get("tracknumber", [""])[0]
         raw_date = data.get("date", [""])[0]
