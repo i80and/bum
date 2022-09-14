@@ -11,26 +11,25 @@ import socket
 import struct
 import sys
 import time
-from pathlib import Path
-from typing import Any, AsyncGenerator, AnyStr, Optional, Tuple, TypeVar, Iterable, List, Dict, \
-    AsyncIterable, NamedTuple
+from typing import (Any, AnyStr, AsyncIterable, Iterable, NamedTuple, Optional,
+                    Tuple, TypeVar)
 
 import mutagen
 import pypledge
 import tornado.platform.asyncio
 import tornado.web
 
-from bum.net import AsyncSocket, RPCClient, send_message, read_message
-from bum.media import Song, Album
+from bum.media import Album, Song
+from bum.net import AsyncSocket, RPCClient, read_message, send_message
 
-logger = logging.getLogger('bum')
-u64_t = struct.Struct('=Q')
-u32_t = struct.Struct('=L')
-net_u32_t = struct.Struct('!L')
+logger = logging.getLogger("bum")
+u64_t = struct.Struct("=Q")
+u32_t = struct.Struct("=L")
+net_u32_t = struct.Struct("!L")
 KB = 1024
-CACHE_CONTROL_UNCHANGING = f'public, max-age={60 * 60 * 7}'
-CACHE_CONTROL_TRANSIENT = f'public, max-age={60 * 60}'
-T = TypeVar('T')
+CACHE_CONTROL_UNCHANGING = f"public, max-age={60 * 60 * 7}"
+CACHE_CONTROL_TRANSIENT = f"public, max-age={60 * 60}"
+T = TypeVar("T")
 
 
 class TranscodeError(Exception):
@@ -38,14 +37,17 @@ class TranscodeError(Exception):
 
 
 def compressible(mime: str) -> bool:
-    return mime.startswith('text/') or mime in ('application/javascript', 'image/svg+xml')
+    return mime.startswith("text/") or mime in (
+        "application/javascript",
+        "image/svg+xml",
+    )
 
 
 class Worker:
     def __init__(self) -> None:
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-    async def hash(self, data: bytes, digest_size: int=16) -> str:
+    async def hash(self, data: bytes, digest_size: int = 16) -> str:
         future = self.pool.submit(self._hash, data, digest_size)
         return await asyncio.wrap_future(future)
 
@@ -56,7 +58,7 @@ class Worker:
     def close(self) -> None:
         self.pool.shutdown()
 
-    def __enter__(self) -> 'Worker':
+    def __enter__(self) -> "Worker":
         return self
 
     def __exit__(self, *args: Any) -> None:
@@ -76,10 +78,10 @@ class Image(NamedTuple):
     etag: str
 
 
-def chunks(l: List[T], n: int) -> Iterable[List[T]]:
+def chunks(l: list[T], n: int) -> Iterable[list[T]]:
     """Split a list into chunks of at most length n."""
     for i in range(0, len(l), n):
-        yield l[i:(i + n)]
+        yield l[i : (i + n)]
 
 
 def sandbox(pledges: Iterable[str]) -> None:
@@ -125,11 +127,11 @@ class CoordinatorErrorCodes(enum.IntEnum):
 
 class BumTranscode:
     def __init__(self) -> None:
-        self.path = './transcoder/build/bum-transcode'
+        self.path = "./transcoder/build/bum-transcode"
         self.transcoders: dict[int, Optional[asyncio.subprocess.Process]] = {}
 
-    async def get_cover_stream(self, paths: List[str], thumbnail: bool) -> bytes:
-        method = 'get-thumbnails' if thumbnail else 'get-cover'
+    async def get_cover_stream(self, paths: list[str], thumbnail: bool) -> bytes:
+        method = "get-thumbnails" if thumbnail else "get-cover"
         child = await self.spawn(method, paths)
         assert child.stdout is not None
         output = await child.stdout.read()
@@ -139,7 +141,7 @@ class BumTranscode:
     async def transcode(self, handle: int, path: AnyStr) -> AsyncIterable[bytes]:
         self.transcoders[handle] = None
 
-        child = await self.spawn('transcode-audio', [path])
+        child = await self.spawn("transcode-audio", [path])
         assert child.stdout is not None
 
         # If we got canceled before we could get started, abort
@@ -151,7 +153,7 @@ class BumTranscode:
         try:
             while True:
                 buf = await child.stdout.read(64 * KB)
-                if buf == b'':
+                if buf == b"":
                     return
 
                 yield buf
@@ -170,20 +172,32 @@ class BumTranscode:
         except KeyError:
             pass
 
-    async def spawn(self, cmd: str, cmd_args: List[Any]) -> asyncio.subprocess.Process:
+    async def spawn(self, cmd: str, cmd_args: list[Any]) -> asyncio.subprocess.Process:
         args_list = [self.path, cmd] + cmd_args
         return await asyncio.create_subprocess_exec(
             *args_list,
             stdout=asyncio.subprocess.PIPE,
             stderr=None,
-            stdin=asyncio.subprocess.PIPE)
+            stdin=asyncio.subprocess.PIPE,
+        )
+
 
 bum_transcode = BumTranscode()
 
 
 class MediaDatabase:
-    COVER_FILES = ('cover.jpg', 'cover.png')
-    FILE_EXTENSIONS = {'.opus', '.ogg', '.oga', '.flac', '.mp3', '.mp4', '.m4a', '.wma', '.wav'}
+    COVER_FILES = ("cover.jpg", "cover.png")
+    FILE_EXTENSIONS = {
+        ".opus",
+        ".ogg",
+        ".oga",
+        ".flac",
+        ".mp3",
+        ".mp4",
+        ".m4a",
+        ".wma",
+        ".wav",
+    }
 
     class MediaLoadContext:
         def __init__(self) -> None:
@@ -207,16 +221,15 @@ class MediaDatabase:
 
         await self.load_files(paths)
 
-    async def load_file(self,
-                        path: str,
-                        ctx: MediaLoadContext,
-                        hashing_worker: Worker) -> None:
+    async def load_file(
+        self, path: str, ctx: MediaLoadContext, hashing_worker: Worker
+    ) -> None:
         dirname = os.path.dirname(path)
 
         try:
             data = mutagen.File(path, easy=True)
         except mutagen.MutagenError as err:
-            logger.error("Error loading %s: \"%s\"", path, err)
+            logger.error('Error loading %s: "%s"', path, err)
             return
 
         raw_disc = data.get("discnumber", [""])[0]
@@ -230,15 +243,13 @@ class MediaDatabase:
         raw_title = data.get("title", [""])[0]
 
         try:
-            disc_string = raw_disc.split('/')[0] \
-                if '/' in raw_disc else raw_disc
+            disc_string = raw_disc.split("/")[0] if "/" in raw_disc else raw_disc
             discno = int(disc_string)
         except ValueError:
             discno = 1
 
         try:
-            track_string = raw_track.split('/')[0] \
-                if '/' in raw_track else raw_track
+            track_string = raw_track.split("/")[0] if "/" in raw_track else raw_track
             trackno = int(track_string)
         except ValueError:
             trackno = -1
@@ -271,15 +282,12 @@ class MediaDatabase:
         hasher = hashlib.blake2b(digest_size=16)
         hasher.update(bytes(raw_artist, "utf-8"))
         hasher.update(bytes(raw_title, "utf-8"))
-        song_id = '{}-{}-{}-{}'.format(hasher.hexdigest(), year, trackno, discno)
-        song = Song(song_id,
-                    path,
-                    raw_title,
-                    raw_artist, trackno, discno, ctx.album.id)
+        song_id = "{}-{}-{}-{}".format(hasher.hexdigest(), year, trackno, discno)
+        song = Song(song_id, path, raw_title, raw_artist, trackno, discno, ctx.album.id)
         self.songs[song.id] = song
         ctx.album.tracks.append(song.id)
 
-    async def load_files(self, paths: List[str]) -> None:
+    async def load_files(self, paths: list[str]) -> None:
         ctx = self.MediaLoadContext()
         with Worker() as hashing_worker:
             for path in paths:
@@ -305,7 +313,7 @@ def start_web(port: int) -> socket.socket:
     image_cache: dict[Tuple[bool, str], Image] = {}
     rpc: Optional[RPCClient] = None
 
-    async def get_images(album_ids: List[str], thumbnail: bool) -> AsyncIterable[Image]:
+    async def get_images(album_ids: list[str], thumbnail: bool) -> AsyncIterable[Image]:
         missing: list[str] = []
 
         for album_id in album_ids:
@@ -320,29 +328,31 @@ def start_web(port: int) -> socket.socket:
 
         request_body = json.dumps(missing)
         method = CoordinatorMethods.THUMBNAIL if thumbnail else CoordinatorMethods.COVER
-        code, result = await rpc.call(method, bytes(request_body, 'utf-8'))
+        code, result = await rpc.call(method, bytes(request_body, "utf-8"))
         if code != 0:
-            raise KeyError('Error getting one or more cover images')
+            raise KeyError("Error getting one or more cover images")
 
         view = memoryview(result)
         i = 0
         while len(view) > 0:
-            image_size, = u32_t.unpack_from(view)
-            image_data = view[u32_t.size:(u32_t.size + image_size)].tobytes()
+            (image_size,) = u32_t.unpack_from(view)
+            image_data = view[u32_t.size : (u32_t.size + image_size)].tobytes()
             image_hash = await hashing_worker.hash(image_data)
             image = Image(image_data, '"{}"'.format(image_hash))
             image_cache[(thumbnail, missing[i])] = image
             yield image
 
             i += 1
-            view = view[(u32_t.size + image_size):]
+            view = view[(u32_t.size + image_size) :]
 
     class StaticHandler(tornado.web.RequestHandler):
         async def get(self, path: str) -> None:
             if not path:
-                path = 'index.html'
+                path = "index.html"
 
-            code, result = await rpc.call(CoordinatorMethods.GET_FILE, bytes(path, 'utf-8'))
+            code, result = await rpc.call(
+                CoordinatorMethods.GET_FILE, bytes(path, "utf-8")
+            )
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
@@ -350,48 +360,52 @@ def start_web(port: int) -> socket.socket:
 
             mimetype, _ = mimetypes.guess_type(path)
             if mimetype is None:
-                mimetype = 'binary/octet-stream'
+                mimetype = "binary/octet-stream"
 
-            if compressible(mimetype) and 'gzip' in self.request.headers.get('Accept-Encoding', ''):
-                self.set_header('Content-Encoding', 'gzip')
+            if compressible(mimetype) and "gzip" in self.request.headers.get(
+                "Accept-Encoding", ""
+            ):
+                self.set_header("Content-Encoding", "gzip")
                 result = await hashing_worker.gzip(result)
 
-            self.set_header('Content-Type', mimetype)
-            self.set_header('Vary', 'Accept-Encoding')
-            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.set_header("Content-Type", mimetype)
+            self.set_header("Vary", "Accept-Encoding")
+            self.set_header("Cache-Control", CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
     class ListSongsHandler(tornado.web.RequestHandler):
         async def get(self) -> None:
-            code, result = await rpc.call(CoordinatorMethods.LIST_SONGS, b'')
+            code, result = await rpc.call(CoordinatorMethods.LIST_SONGS, b"")
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
                 return
 
-            if 'gzip' in self.request.headers.get('Accept-Encoding', ''):
-                self.set_header('Content-Encoding', 'gzip')
+            if "gzip" in self.request.headers.get("Accept-Encoding", ""):
+                self.set_header("Content-Encoding", "gzip")
                 result = await hashing_worker.gzip(result)
 
-            self.set_header('Content-Type', 'application/json')
-            self.set_header('Vary', 'Accept-Encoding')
-            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.set_header("Content-Type", "application/json")
+            self.set_header("Vary", "Accept-Encoding")
+            self.set_header("Cache-Control", CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
     class SongHandler(tornado.web.RequestHandler):
         async def get(self, song_id: str) -> None:
             self.done = False
             self.canceled = False
-            self.set_header('Content-Type', 'audio/webm')
+            self.set_header("Content-Type", "audio/webm")
 
             # Unfortunately, we can't promise that the transcode will
             # complete successfully.
-            self.set_header('Pragma', 'no-cache')
+            self.set_header("Pragma", "no-cache")
 
             self.message_id = rpc.get_message_id()
-            provider = rpc.subscribe(CoordinatorMethods.TRANSCODE,
-                                     bytes(song_id, 'utf-8'),
-                                     message_id=self.message_id)
+            provider = rpc.subscribe(
+                CoordinatorMethods.TRANSCODE,
+                bytes(song_id, "utf-8"),
+                message_id=self.message_id,
+            )
             async for code, chunk in provider:
                 if code != 0:
                     if self.canceled:
@@ -413,41 +427,45 @@ def start_web(port: int) -> socket.socket:
 
             self.canceled = True
             asyncio.ensure_future(
-                rpc.call(CoordinatorMethods.CANCEL_TRANSCODE, b'', message_id=self.message_id))
+                rpc.call(
+                    CoordinatorMethods.CANCEL_TRANSCODE, b"", message_id=self.message_id
+                )
+            )
 
     class ListAlbumsHandler(tornado.web.RequestHandler):
         async def get(self) -> None:
-            code, result = await rpc.call(CoordinatorMethods.LIST_ALBUMS, b'')
+            code, result = await rpc.call(CoordinatorMethods.LIST_ALBUMS, b"")
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
                 return
 
-            if 'gzip' in self.request.headers.get('Accept-Encoding', ''):
-                self.set_header('Content-Encoding', 'gzip')
+            if "gzip" in self.request.headers.get("Accept-Encoding", ""):
+                self.set_header("Content-Encoding", "gzip")
                 result = await hashing_worker.gzip(result)
 
-            self.set_header('Content-Type', 'application/json')
-            self.set_header('Vary', 'Accept-Encoding')
-            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.set_header("Content-Type", "application/json")
+            self.set_header("Vary", "Accept-Encoding")
+            self.set_header("Cache-Control", CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
     class AlbumHandler(tornado.web.RequestHandler):
         async def get(self, album_id: str) -> None:
-            code, result = await rpc.call(CoordinatorMethods.ALBUM_DETAILS,
-                                          bytes(album_id, 'utf-8'))
+            code, result = await rpc.call(
+                CoordinatorMethods.ALBUM_DETAILS, bytes(album_id, "utf-8")
+            )
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
                 return
 
-            if 'gzip' in self.request.headers.get('Accept-Encoding', ''):
-                self.set_header('Content-Encoding', 'gzip')
+            if "gzip" in self.request.headers.get("Accept-Encoding", ""):
+                self.set_header("Content-Encoding", "gzip")
                 result = await hashing_worker.gzip(result)
 
-            self.set_header('Content-Type', 'application/json')
-            self.set_header('Vary', 'Accept-Encoding')
-            self.set_header('Cache-Control', CACHE_CONTROL_TRANSIENT)
+            self.set_header("Content-Type", "application/json")
+            self.set_header("Vary", "Accept-Encoding")
+            self.set_header("Cache-Control", CACHE_CONTROL_TRANSIENT)
             self.write(result)
 
     class AlbumArtHandler(tornado.web.RequestHandler):
@@ -458,94 +476,104 @@ def start_web(port: int) -> socket.socket:
                     self.finish()
                     return
 
-                if self.request.headers.get('If-None-Match', '') == image.etag:
+                if self.request.headers.get("If-None-Match", "") == image.etag:
                     self.set_status(304)
                     return
 
-                self.set_header('Content-Type', 'image/jpeg')
-                self.set_header('Cache-Control', CACHE_CONTROL_UNCHANGING)
-                self.set_header('ETag', image.etag)
+                self.set_header("Content-Type", "image/jpeg")
+                self.set_header("Cache-Control", CACHE_CONTROL_UNCHANGING)
+                self.set_header("ETag", image.etag)
                 self.write(image.data)
 
                 break
 
     class ThumbnailHandler(tornado.web.RequestHandler):
         async def get(self) -> None:
-            raw_album_ids = str(self.request.query_arguments.get('ids', [b''])[0], 'utf-8')
-            album_ids = raw_album_ids.split(',')
-            self.set_header('Content-Type', 'binary/octet-stream')
-            self.set_header('Cache-Control', CACHE_CONTROL_UNCHANGING)
+            raw_album_ids = str(
+                self.request.query_arguments.get("ids", [b""])[0], "utf-8"
+            )
+            album_ids = raw_album_ids.split(",")
+            self.set_header("Content-Type", "binary/octet-stream")
+            self.set_header("Cache-Control", CACHE_CONTROL_UNCHANGING)
 
             async for image in get_images(album_ids, True):
                 self.write(net_u32_t.pack(len(image.data)))
                 self.write(image.data)
 
-    app = tornado.web.Application([
-        (r'/api/music/songs', ListSongsHandler),
-        (r'/api/music/song/([\w\\-]+)/stream', SongHandler),
-        (r'/api/music/albums', ListAlbumsHandler),
-        (r'/api/music/album/([\w\\-]+)/metadata', AlbumHandler),
-        (r'/api/music/album/([\w\\-]+)/cover', AlbumArtHandler),
-        (r'/api/music/thumbnail', ThumbnailHandler),
-        (r'/(.*)', StaticHandler)
-    ])
+    app = tornado.web.Application(
+        [
+            (r"/api/music/songs", ListSongsHandler),
+            (r"/api/music/song/([\w\\-]+)/stream", SongHandler),
+            (r"/api/music/albums", ListAlbumsHandler),
+            (r"/api/music/album/([\w\\-]+)/metadata", AlbumHandler),
+            (r"/api/music/album/([\w\\-]+)/cover", AlbumArtHandler),
+            (r"/api/music/thumbnail", ThumbnailHandler),
+            (r"/(.*)", StaticHandler),
+        ]
+    )
 
     async def setup() -> None:
         nonlocal rpc
         rpc = RPCClient(await AsyncSocket.create(child_sock))
         await rpc.run()
 
-    app.listen(port, '127.0.0.1')
+    app.listen(port, "127.0.0.1")
     asyncio.ensure_future(setup())
-    sandbox(['stdio', 'inet', 'unix'])
+    sandbox(["stdio", "inet", "unix"])
     asyncio.get_event_loop().run_forever()
     assert False
 
 
 class Coordinator:
-    STATIC_ROOT = os.path.realpath(os.environ.get('STATIC_ROOT', '../client/build'))
+    STATIC_ROOT = os.path.realpath(os.environ.get("STATIC_ROOT", "../client/build"))
 
     def __init__(self, db: MediaDatabase, sock: AsyncSocket) -> None:
         self.db = db
         self.sock = sock
 
     def list_songs(self) -> bytes:
-        songs = {'songs': [s.to_json() for s in self.db.songs.values()]}
-        return bytes(json.dumps(songs), 'utf-8')
+        songs = {"songs": [s.to_json() for s in self.db.songs.values()]}
+        return bytes(json.dumps(songs), "utf-8")
 
     def list_albums(self) -> bytes:
-        albums = {'albums': [a.to_json() for a in self.db.albums.values()]}
-        return bytes(json.dumps(albums), 'utf-8')
+        albums = {"albums": [a.to_json() for a in self.db.albums.values()]}
+        return bytes(json.dumps(albums), "utf-8")
 
     def get_album(self, album_id: str) -> bytes:
         album = self.db.albums[album_id]
-        return bytes(json.dumps(album.to_json()), 'utf-8')
+        return bytes(json.dumps(album.to_json()), "utf-8")
 
     def get_static_file(self, path: str) -> Tuple[CoordinatorErrorCodes, bytes]:
-        logger.info('Reading %s', path)
-        path = os.path.join(self.STATIC_ROOT, path.lstrip('/'))
+        logger.info("Reading %s", path)
+        path = os.path.join(self.STATIC_ROOT, path.lstrip("/"))
         path = os.path.realpath(path)
         if not path.startswith(self.STATIC_ROOT):
-            return (CoordinatorErrorCodes.DENIED, b'')
+            return (CoordinatorErrorCodes.DENIED, b"")
 
         try:
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 result = f.read()
         except FileNotFoundError:
-            return (CoordinatorErrorCodes.NO_MATCH, b'')
+            return (CoordinatorErrorCodes.NO_MATCH, b"")
         except PermissionError:
-            return (CoordinatorErrorCodes.DENIED, b'')
+            return (CoordinatorErrorCodes.DENIED, b"")
 
         return (CoordinatorErrorCodes.OK, result)
 
-    async def transcode(self, web_sock: AsyncSocket, message_id: int, song: Song) -> None:
+    async def transcode(
+        self, web_sock: AsyncSocket, message_id: int, song: Song
+    ) -> None:
         try:
             async for chunk in bum_transcode.transcode(message_id, song.path):
-                await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, chunk)
+                await send_message(
+                    web_sock, message_id, CoordinatorErrorCodes.OK, chunk
+                )
 
-            await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, b'')
+            await send_message(web_sock, message_id, CoordinatorErrorCodes.OK, b"")
         except TranscodeError:
-            await send_message(web_sock, message_id, CoordinatorErrorCodes.TRANSCODE_ERROR, b'')
+            await send_message(
+                web_sock, message_id, CoordinatorErrorCodes.TRANSCODE_ERROR, b""
+            )
 
 
 def run() -> None:
@@ -556,7 +584,7 @@ def run() -> None:
 
     web_raw_sock = start_web(8000)
 
-    sandbox(['stdio', 'unix', 'proc', 'exec', 'rpath'])
+    sandbox(["stdio", "unix", "proc", "exec", "rpath"])
     db = MediaDatabase(sys.argv[1])
 
     async def start() -> None:
@@ -564,11 +592,11 @@ def run() -> None:
         coordinator = Coordinator(db, web_sock)
         start = time.time()
         await db.scan()
-        logger.info('Done scanning in %fs', time.time() - start)
+        logger.info("Done scanning in %fs", time.time() - start)
 
         while True:
             message_id, method, raw_body = await read_message(web_sock)
-            response_body = b''
+            response_body = b""
             response_code = CoordinatorErrorCodes.BAD_METHOD
 
             try:
@@ -580,34 +608,41 @@ def run() -> None:
                     response_body = coordinator.list_albums()
                 elif method == CoordinatorMethods.ALBUM_DETAILS:
                     response_code = CoordinatorErrorCodes.OK
-                    response_body = coordinator.get_album(str(raw_body, 'utf-8'))
-                elif method == CoordinatorMethods.THUMBNAIL or method == CoordinatorMethods.COVER:
+                    response_body = coordinator.get_album(str(raw_body, "utf-8"))
+                elif (
+                    method == CoordinatorMethods.THUMBNAIL
+                    or method == CoordinatorMethods.COVER
+                ):
                     response_code = CoordinatorErrorCodes.OK
-                    album_ids = json.loads(str(raw_body, 'utf-8'))
+                    album_ids = json.loads(str(raw_body, "utf-8"))
                     covers: list[str] = []
                     for album_id in album_ids:
                         album = db.albums.get(album_id, None)
                         if album is not None:
                             covers.append(album.cover_path)
                         else:
-                            covers.append('')
-                    thumbnail = (method == CoordinatorMethods.THUMBNAIL)
-                    response_body = await bum_transcode.get_cover_stream(covers, thumbnail)
+                            covers.append("")
+                    thumbnail = method == CoordinatorMethods.THUMBNAIL
+                    response_body = await bum_transcode.get_cover_stream(
+                        covers, thumbnail
+                    )
                 elif method == CoordinatorMethods.TRANSCODE:
                     response_code = CoordinatorErrorCodes.OK
-                    song = db.songs[str(raw_body, 'utf-8')]
-                    asyncio.ensure_future(coordinator.transcode(web_sock, message_id, song))
+                    song = db.songs[str(raw_body, "utf-8")]
+                    asyncio.ensure_future(
+                        coordinator.transcode(web_sock, message_id, song)
+                    )
                     continue
                 elif method == CoordinatorMethods.CANCEL_TRANSCODE:
                     response_code = CoordinatorErrorCodes.OK
                     bum_transcode.cancel_transcode(message_id)
                 elif method == CoordinatorMethods.GET_FILE:
-                    path = str(raw_body, 'utf-8')
+                    path = str(raw_body, "utf-8")
                     (response_code, response_body) = coordinator.get_static_file(path)
             except KeyError:
                 response_code = CoordinatorErrorCodes.NO_MATCH
-            except Exception as err:
-                logger.exception('Coordinator error')
+            except Exception:
+                logger.exception("Coordinator error")
                 response_code = CoordinatorErrorCodes.INTERNAL
 
             await send_message(web_sock, message_id, response_code, response_body)
@@ -615,5 +650,6 @@ def run() -> None:
     asyncio.ensure_future(start())
     asyncio.get_event_loop().run_forever()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run()

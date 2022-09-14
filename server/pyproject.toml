@@ -12,6 +12,10 @@ tornado = "^6.2"
 mutagen = "^1.45.1"
 
 [tool.poetry.dev-dependencies]
+black = "^22.8.0"
+mypy = "^0.971"
+isort = "^5.10.1"
+pyflakes = "^2.5.0"
 
 [tool.poetry.scripts]
 bumd = "bum.main:run"

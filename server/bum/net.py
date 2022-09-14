@@ -2,10 +2,10 @@ import asyncio
 import struct
 from asyncio import Queue
 from socket import socket
-from typing import AsyncIterable, Dict, Tuple, TypeVar, Optional, NamedTuple
+from typing import AsyncIterable, Dict, NamedTuple, Optional, Tuple, TypeVar
 
-message_header_t = struct.Struct('@III')
-T = TypeVar('T')
+message_header_t = struct.Struct("@III")
+T = TypeVar("T")
 
 
 class ErrorMessage(Exception):
@@ -19,7 +19,7 @@ class AsyncSocket(NamedTuple):
     writer: asyncio.StreamWriter
 
     @staticmethod
-    async def create(sock: socket) -> 'AsyncSocket':
+    async def create(sock: socket) -> "AsyncSocket":
         (reader, writer) = await asyncio.open_connection(sock=sock)
         return AsyncSocket(reader, writer)
 
@@ -32,7 +32,9 @@ async def read_message(sock: AsyncSocket) -> Tuple[int, int, bytes]:
     return (message_id, status, message_body)
 
 
-async def send_message(sock: AsyncSocket, message_id: int, method: int, message: bytes) -> None:
+async def send_message(
+    sock: AsyncSocket, message_id: int, method: int, message: bytes
+) -> None:
     packed = message_header_t.pack(int(message_id), int(method), len(message))
     sock.writer.write(packed)
     sock.writer.write(message)
@@ -50,10 +52,9 @@ class RPCClient:
         self.message_counter += 1
         return message_id
 
-    async def subscribe(self,
-                        method: int,
-                        message: bytes,
-                        message_id: int) -> AsyncIterable[Tuple[int, Optional[bytes]]]:
+    async def subscribe(
+        self, method: int, message: bytes, message_id: int
+    ) -> AsyncIterable[Tuple[int, Optional[bytes]]]:
         await send_message(self.sock, message_id, int(method), message)
         queue = Queue()  # type: Queue[Tuple[int, Optional[bytes]]]
         self.pending[message_id] = queue
@@ -74,13 +75,15 @@ class RPCClient:
         except KeyError:
             pass
 
-    async def call(self, method: int, message: bytes, message_id: int=None) -> Tuple[int, bytes]:
+    async def call(
+        self, method: int, message: bytes, message_id: int = None
+    ) -> Tuple[int, bytes]:
         if message_id is None:
             message_id = self.get_message_id()
 
         async for result in self.subscribe(method, message, message_id=message_id):
             if result[1] is None:
-                return (result[0], b'')
+                return (result[0], b"")
 
             return (result[0], result[1])
 

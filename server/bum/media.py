@@ -12,10 +12,10 @@ class Song(NamedTuple):
 
     def to_json(self) -> object:
         return {
-            'id': self.id,
-            'title': self.title,
-            'artist': self.artist,
-            'album_id': self.album
+            "id": self.id,
+            "title": self.title,
+            "artist": self.artist,
+            "album_id": self.album,
         }
 
 
@@ -29,9 +29,9 @@ class Album(NamedTuple):
 
     def to_json(self) -> object:
         return {
-            'id': self.id,
-            'title': self.title,
-            'album_artist': self.album_artist,
-            'year': self.year,
-            'tracks': self.tracks,
+            "id": self.id,
+            "title": self.title,
+            "album_artist": self.album_artist,
+            "year": self.year,
+            "tracks": self.tracks,
         }
