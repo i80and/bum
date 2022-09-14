@@ -221,7 +221,10 @@ class MediaDatabase:
 
         raw_disc = data.get("discnumber", [""])[0]
         raw_track = data.get("tracknumber", [""])[0]
-        raw_date = data.get("date", [""])[0]
+        raw_date = ""
+        for candidate in ("date", "year"):
+            if candidate in data:
+                raw_date = data[candidate][0]
         raw_album = data.get("album", [""])[0]
         raw_artist = data.get("artist", [""])[0]
         raw_title = data.get("title", [""])[0]
