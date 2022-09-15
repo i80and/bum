@@ -85,7 +85,7 @@ class BumTranscode:
 
 
 class MediaDatabase:
-    COVER_FILES = ("cover.jpg", "cover.png")
+    COVER_FILES = ("cover.jpg", "cover.png", "cover.webp")
     FILE_EXTENSIONS = {
         ".opus",
         ".ogg",
