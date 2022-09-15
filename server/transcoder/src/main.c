@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
 #include <libavcodec/avcodec.h>
 #include <libavfilter/avfilter.h>
@@ -483,7 +484,8 @@ int get_covers(char* const* paths, int n_paths, bool thumbnail) {
         jpeg_finish_compress(&jpeg_ctx);
 
         out_size_32 = out_size;
-        fwrite(&out_size_32, sizeof(out_size_32), 1, stdout);
+        uint32_t out_size_32_network = htonl(out_size_32);
+        fwrite(&out_size_32_network, sizeof(out_size_32_network), 1, stdout);
         fwrite(out_buf, sizeof(uint8_t), out_size_32, stdout);
 
         free(out_buf);

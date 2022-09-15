@@ -1,10 +1,13 @@
 import asyncio
 import struct
 from asyncio import Queue
+from io import BytesIO
 from socket import socket
-from typing import AsyncIterable, Dict, NamedTuple, Optional, Tuple, TypeVar
+from typing import (AsyncIterable, Dict, Iterable, NamedTuple, Optional, Tuple,
+                    TypeVar)
 
 message_header_t = struct.Struct("@III")
+net_u32_t = struct.Struct("!L")
 T = TypeVar("T")
 
 
@@ -96,3 +99,22 @@ class RPCClient:
                 self.pending[message_id].put_nowait((response, body))
             except KeyError:
                 pass
+
+
+def pack_sequence(data_sequence: Iterable[bytes]) -> bytes:
+    data = BytesIO()
+    for item in data_sequence:
+        data.write(net_u32_t.pack(len(item)))
+        data.write(item)
+
+    return data.getvalue()
+
+
+def unpack_sequence(data: bytes) -> Iterable[bytes]:
+    view = memoryview(data)
+    while len(view) > 0:
+        (data_size,) = net_u32_t.unpack_from(view)
+        data = view[net_u32_t.size : (net_u32_t.size + data_size)].tobytes()
+        yield data
+
+        view = view[(net_u32_t.size + data_size) :]

@@ -1,40 +1,30 @@
 import asyncio
-import concurrent.futures
 import enum
-import gzip
-import hashlib
 import json
 import logging
 import mimetypes
 import os
 import socket
-import struct
 import sys
 import time
 from pathlib import Path
-from typing import (AsyncIterable, Iterable, NamedTuple, Optional, Sequence,
-                    Tuple, TypeVar)
+from typing import (AsyncIterable, Iterable, NamedTuple, Optional, Tuple,
+                    TypeVar)
 
-import mutagen
 import pypledge
 import tornado.platform.asyncio
 import tornado.web
 
-from bum.media import Album, Song
-from bum.net import AsyncSocket, RPCClient, read_message, send_message
+from . import net
+from .media import Song
+from .media_database import MediaDatabase, TranscodeError
+from .net import AsyncSocket, RPCClient, read_message, send_message
+from .worker import Worker
 
 logger = logging.getLogger("bum")
-u64_t = struct.Struct("=Q")
-u32_t = struct.Struct("=L")
-net_u32_t = struct.Struct("!L")
-KB = 1024
 CACHE_CONTROL_UNCHANGING = f"public, max-age={60 * 60 * 7}"
 CACHE_CONTROL_TRANSIENT = f"public, max-age={60 * 60}"
 T = TypeVar("T")
-
-
-class TranscodeError(Exception):
-    pass
 
 
 def compressible(mime: str) -> bool:
@@ -42,36 +32,6 @@ def compressible(mime: str) -> bool:
         "application/javascript",
         "image/svg+xml",
     )
-
-
-class Worker:
-    def __init__(self) -> None:
-        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-
-    async def hash(self, data: bytes, digest_size: int = 16) -> str:
-        future = self.pool.submit(self._hash, data, digest_size)
-        return await asyncio.wrap_future(future)
-
-    async def gzip(self, data: bytes) -> bytes:
-        future = self.pool.submit(self._gzip, data)
-        return await asyncio.wrap_future(future)
-
-    def close(self) -> None:
-        self.pool.shutdown()
-
-    def __enter__(self) -> "Worker":
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
-
-    @staticmethod
-    def _hash(data: bytes, digest_size: int) -> str:
-        return hashlib.blake2b(data, digest_size=digest_size).hexdigest()
-
-    @staticmethod
-    def _gzip(data: bytes) -> bytes:
-        return gzip.compress(data)
 
 
 class Image(NamedTuple):
@@ -126,185 +86,6 @@ class CoordinatorErrorCodes(enum.IntEnum):
         return 200
 
 
-class BumTranscode:
-    def __init__(self) -> None:
-        self.path = Path("./transcoder/build/bum-transcode")
-        self.transcoders: dict[int, Optional[asyncio.subprocess.Process]] = {}
-
-    async def get_cover_stream(self, paths: list[Path], thumbnail: bool) -> bytes:
-        method = "get-thumbnails" if thumbnail else "get-cover"
-        child = await self.spawn(method, paths)
-        assert child.stdout is not None
-        output = await child.stdout.read()
-
-        return output
-
-    async def transcode(self, handle: int, path: Path) -> AsyncIterable[bytes]:
-        self.transcoders[handle] = None
-
-        child = await self.spawn("transcode-audio", [path])
-        assert child.stdout is not None
-
-        # If we got canceled before we could get started, abort
-        if handle not in self.transcoders:
-            child.kill()
-            return
-
-        self.transcoders[handle] = child
-        try:
-            while True:
-                buf = await child.stdout.read(64 * KB)
-                if buf == b"":
-                    return
-
-                yield buf
-        finally:
-            del self.transcoders[handle]
-            if await child.wait() != 0:
-                raise TranscodeError(path)
-
-    def cancel_transcode(self, handle: int) -> None:
-        try:
-            child = self.transcoders[handle]
-            if child:
-                child.kill()
-            else:
-                del self.transcoders[handle]
-        except KeyError:
-            pass
-
-    async def spawn(
-        self,
-        cmd: str,
-        cmd_args: Sequence[str | bytes | os.PathLike[str] | os.PathLike[bytes]],
-    ) -> asyncio.subprocess.Process:
-        args_list: list[str | bytes | os.PathLike[str] | os.PathLike[bytes]] = [
-            self.path,
-            cmd,
-            *cmd_args,
-        ]
-        return await asyncio.create_subprocess_exec(
-            *args_list,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=None,
-            stdin=asyncio.subprocess.PIPE,
-        )
-
-
-bum_transcode = BumTranscode()
-
-
-class MediaDatabase:
-    COVER_FILES = ("cover.jpg", "cover.png")
-    FILE_EXTENSIONS = {
-        ".opus",
-        ".ogg",
-        ".oga",
-        ".flac",
-        ".mp3",
-        ".mp4",
-        ".m4a",
-        ".wma",
-        ".wav",
-    }
-
-    class MediaLoadContext:
-        def __init__(self) -> None:
-            self.album: Optional[Album] = None
-            self.current_album_title: Optional[str] = None
-
-    def __init__(self, root: Path) -> None:
-        self.root = root
-        self.albums: dict[str, Album] = {}
-        self.songs: dict[str, Song] = {}
-
-    async def scan(self) -> None:
-        paths: list[Path] = []
-        for path in self.root.glob("**/*"):
-            if path.suffix not in self.FILE_EXTENSIONS:
-                continue
-
-            paths.append(path)
-
-        await self.load_files(paths)
-
-    async def load_file(
-        self, path: Path, ctx: MediaLoadContext, hashing_worker: Worker
-    ) -> None:
-        dirname = path.parent
-
-        try:
-            data = mutagen.File(path, easy=True)
-        except mutagen.MutagenError as err:
-            logger.error('Error loading %s: "%s"', path, err)
-            return
-
-        raw_disc = data.get("discnumber", [""])[0]
-        raw_track = data.get("tracknumber", [""])[0]
-        raw_date = ""
-        for candidate in ("date", "year"):
-            if candidate in data:
-                raw_date = data[candidate][0]
-        raw_album = data.get("album", [""])[0]
-        raw_artist = data.get("artist", [""])[0]
-        raw_title = data.get("title", [""])[0]
-
-        try:
-            disc_string = raw_disc.split("/")[0] if "/" in raw_disc else raw_disc
-            discno = int(disc_string)
-        except ValueError:
-            discno = 1
-
-        try:
-            track_string = raw_track.split("/")[0] if "/" in raw_track else raw_track
-            trackno = int(track_string)
-        except ValueError:
-            trackno = -1
-
-        try:
-            year = int(raw_date)
-        except ValueError:
-            year = 0
-
-        if not ctx.album or ctx.current_album_title != raw_album:
-            ctx.current_album_title = raw_album
-            hasher = hashlib.blake2b(digest_size=16)
-            hasher.update(bytes(raw_album, "utf-8"))
-            hasher.update(bytes(raw_artist, "utf-8"))
-            album_id = hasher.hexdigest()
-
-            cover_filename = path
-            for candidate_filename in self.COVER_FILES:
-                candidate_path = dirname.joinpath(candidate_filename)
-                if candidate_path.is_file():
-                    cover_filename = candidate_path
-                    break
-
-            if ctx.album:
-                ctx.album.tracks.sort(key=lambda track: self.songs[track].trackno)
-
-            ctx.album = Album(album_id, raw_album, raw_artist, year, [], cover_filename)
-            self.albums[ctx.album.id] = ctx.album
-
-        hasher = hashlib.blake2b(digest_size=16)
-        hasher.update(bytes(raw_artist, "utf-8"))
-        hasher.update(bytes(raw_title, "utf-8"))
-        song_id = "{}-{}-{}-{}".format(hasher.hexdigest(), year, trackno, discno)
-        song = Song(song_id, path, raw_title, raw_artist, trackno, discno, ctx.album.id)
-        self.songs[song.id] = song
-        ctx.album.tracks.append(song.id)
-
-    async def load_files(self, paths: list[Path]) -> None:
-        ctx = self.MediaLoadContext()
-        with Worker() as hashing_worker:
-            for path in paths:
-                await self.load_file(path, ctx, hashing_worker)
-
-        # Finalize the last album
-        if ctx.album:
-            ctx.album.tracks.sort(key=lambda track: self.songs[track].trackno)
-
-
 def start_web(port: int) -> socket.socket:
     child_sock, parent_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0)
 
@@ -317,40 +98,19 @@ def start_web(port: int) -> socket.socket:
     tornado.platform.asyncio.AsyncIOMainLoop().install()
 
     hashing_worker = Worker()
-    image_cache: dict[Tuple[bool, str], Image] = {}
     rpc: Optional[RPCClient] = None
 
     async def get_images(album_ids: list[str], thumbnail: bool) -> AsyncIterable[Image]:
-        missing: list[str] = []
-
-        for album_id in album_ids:
-            key = (thumbnail, album_id)
-            if key in image_cache:
-                yield image_cache[key]
-            elif album_id:
-                missing.append(album_id)
-
-        if not missing:
-            return
-
-        request_body = json.dumps(missing)
+        request_body = json.dumps(album_ids)
         method = CoordinatorMethods.THUMBNAIL if thumbnail else CoordinatorMethods.COVER
         code, result = await rpc.call(method, bytes(request_body, "utf-8"))
         if code != 0:
             raise KeyError("Error getting one or more cover images")
 
-        view = memoryview(result)
-        i = 0
-        while len(view) > 0:
-            (image_size,) = u32_t.unpack_from(view)
-            image_data = view[u32_t.size : (u32_t.size + image_size)].tobytes()
+        for i, image_data in enumerate(net.unpack_sequence(result)):
             image_hash = await hashing_worker.hash(image_data)
             image = Image(image_data, '"{}"'.format(image_hash))
-            image_cache[(thumbnail, missing[i])] = image
             yield image
-
-            i += 1
-            view = view[(u32_t.size + image_size) :]
 
     class StaticHandler(tornado.web.RequestHandler):
         async def get(self, path: str) -> None:
@@ -504,7 +264,7 @@ def start_web(port: int) -> socket.socket:
             self.set_header("Cache-Control", CACHE_CONTROL_UNCHANGING)
 
             async for image in get_images(album_ids, True):
-                self.write(net_u32_t.pack(len(image.data)))
+                self.write(net.net_u32_t.pack(len(image.data)))
                 self.write(image.data)
 
     app = tornado.web.Application(
@@ -571,7 +331,7 @@ class Coordinator:
         self, web_sock: AsyncSocket, message_id: int, song: Song
     ) -> None:
         try:
-            async for chunk in bum_transcode.transcode(message_id, song.path):
+            async for chunk in self.db.bum_transcode.transcode(message_id, song.path):
                 await send_message(
                     web_sock, message_id, CoordinatorErrorCodes.OK, chunk
                 )
@@ -630,9 +390,7 @@ def run() -> None:
                         else:
                             covers.append(Path(""))
                     thumbnail = method == CoordinatorMethods.THUMBNAIL
-                    response_body = await bum_transcode.get_cover_stream(
-                        covers, thumbnail
-                    )
+                    response_body = await db.get_covers(covers, thumbnail)
                 elif method == CoordinatorMethods.TRANSCODE:
                     response_code = CoordinatorErrorCodes.OK
                     song = db.songs[str(raw_body, "utf-8")]
@@ -642,7 +400,7 @@ def run() -> None:
                     continue
                 elif method == CoordinatorMethods.CANCEL_TRANSCODE:
                     response_code = CoordinatorErrorCodes.OK
-                    bum_transcode.cancel_transcode(message_id)
+                    db.bum_transcode.cancel_transcode(message_id)
                 elif method == CoordinatorMethods.GET_FILE:
                     path = str(raw_body, "utf-8")
                     (response_code, response_body) = coordinator.get_static_file(path)
@@ -654,8 +412,11 @@ def run() -> None:
 
             await send_message(web_sock, message_id, response_code, response_body)
 
-    asyncio.ensure_future(start())
-    asyncio.get_event_loop().run_forever()
+    try:
+        asyncio.ensure_future(start())
+        asyncio.get_event_loop().run_forever()
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
