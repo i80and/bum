@@ -102,7 +102,7 @@ def start_web(port: int) -> socket.socket:
     async def get_images(album_ids: list[str], thumbnail: bool) -> AsyncIterable[Image]:
         request_body = json.dumps(album_ids)
         method = CoordinatorMethods.THUMBNAIL if thumbnail else CoordinatorMethods.COVER
-        code, result = await rpc.call(method, bytes(request_body, "utf-8"))
+        code, result = await rpc.call(method, request_body)
         if code != 0:
             raise KeyError("Error getting one or more cover images")
 
@@ -116,9 +116,7 @@ def start_web(port: int) -> socket.socket:
             if not path:
                 path = "index.html"
 
-            code, result = await rpc.call(
-                CoordinatorMethods.GET_FILE, bytes(path, "utf-8")
-            )
+            code, result = await rpc.call(CoordinatorMethods.GET_FILE, path)
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
@@ -141,7 +139,7 @@ def start_web(port: int) -> socket.socket:
 
     class ListSongsHandler(tornado.web.RequestHandler):
         async def get(self) -> None:
-            code, result = await rpc.call(CoordinatorMethods.LIST_SONGS, b"")
+            code, result = await rpc.call(CoordinatorMethods.LIST_SONGS, None)
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
@@ -169,7 +167,7 @@ def start_web(port: int) -> socket.socket:
             self.message_id = rpc.get_message_id()
             provider = rpc.subscribe(
                 CoordinatorMethods.TRANSCODE,
-                bytes(song_id, "utf-8"),
+                song_id,
                 message_id=self.message_id,
             )
             async for code, chunk in provider:
@@ -194,13 +192,15 @@ def start_web(port: int) -> socket.socket:
             self.canceled = True
             asyncio.ensure_future(
                 rpc.call(
-                    CoordinatorMethods.CANCEL_TRANSCODE, b"", message_id=self.message_id
+                    CoordinatorMethods.CANCEL_TRANSCODE,
+                    None,
+                    message_id=self.message_id,
                 )
             )
 
     class ListAlbumsHandler(tornado.web.RequestHandler):
         async def get(self) -> None:
-            code, result = await rpc.call(CoordinatorMethods.LIST_ALBUMS, b"")
+            code, result = await rpc.call(CoordinatorMethods.LIST_ALBUMS, None)
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
@@ -217,9 +217,7 @@ def start_web(port: int) -> socket.socket:
 
     class AlbumHandler(tornado.web.RequestHandler):
         async def get(self, album_id: str) -> None:
-            code, result = await rpc.call(
-                CoordinatorMethods.ALBUM_DETAILS, bytes(album_id, "utf-8")
-            )
+            code, result = await rpc.call(CoordinatorMethods.ALBUM_DETAILS, album_id)
             if code != 0:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
@@ -297,17 +295,17 @@ class Coordinator:
         self.db = db
         self.sock = sock
 
-    def list_songs(self) -> bytes:
+    def list_songs(self) -> str:
         songs = {"songs": [s.to_json() for s in self.db.songs.values()]}
-        return bytes(json.dumps(songs), "utf-8")
+        return json.dumps(songs)
 
-    def list_albums(self) -> bytes:
+    def list_albums(self) -> str:
         albums = {"albums": [a.to_json() for a in self.db.albums.values()]}
-        return bytes(json.dumps(albums), "utf-8")
+        return json.dumps(albums)
 
-    def get_album(self, album_id: str) -> bytes:
+    def get_album(self, album_id: str) -> str:
         album = self.db.albums[album_id]
-        return bytes(json.dumps(album.to_json()), "utf-8")
+        return json.dumps(album.to_json())
 
     def get_static_file(self, path: str) -> Tuple[CoordinatorErrorCodes, bytes]:
         logger.info("Reading %s", path)
@@ -362,7 +360,8 @@ def run() -> None:
 
         while True:
             message_id, method, raw_body = await read_message(web_sock)
-            response_body = b""
+
+            response_body: str | bytes = b""
             response_code = CoordinatorErrorCodes.BAD_METHOD
 
             try:
@@ -374,13 +373,15 @@ def run() -> None:
                     response_body = coordinator.list_albums()
                 elif method == CoordinatorMethods.ALBUM_DETAILS:
                     response_code = CoordinatorErrorCodes.OK
-                    response_body = coordinator.get_album(str(raw_body, "utf-8"))
+                    assert isinstance(raw_body, str)
+                    response_body = coordinator.get_album(raw_body)
                 elif (
                     method == CoordinatorMethods.THUMBNAIL
                     or method == CoordinatorMethods.COVER
                 ):
                     response_code = CoordinatorErrorCodes.OK
-                    album_ids = json.loads(str(raw_body, "utf-8"))
+                    assert isinstance(raw_body, str)
+                    album_ids = json.loads(raw_body)
                     covers: list[Path] = []
                     for album_id in album_ids:
                         album = db.albums.get(album_id, None)
@@ -392,7 +393,8 @@ def run() -> None:
                     response_body = await db.get_covers(covers, thumbnail)
                 elif method == CoordinatorMethods.TRANSCODE:
                     response_code = CoordinatorErrorCodes.OK
-                    song = db.songs[str(raw_body, "utf-8")]
+                    assert isinstance(raw_body, str)
+                    song = db.songs[raw_body]
                     asyncio.ensure_future(
                         coordinator.transcode(web_sock, message_id, song)
                     )
@@ -401,8 +403,10 @@ def run() -> None:
                     response_code = CoordinatorErrorCodes.OK
                     db.bum_transcode.cancel_transcode(message_id)
                 elif method == CoordinatorMethods.GET_FILE:
-                    path = str(raw_body, "utf-8")
-                    (response_code, response_body) = coordinator.get_static_file(path)
+                    assert isinstance(raw_body, str)
+                    (response_code, response_body) = coordinator.get_static_file(
+                        raw_body
+                    )
             except KeyError:
                 response_code = CoordinatorErrorCodes.NO_MATCH
             except Exception:

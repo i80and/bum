@@ -12,7 +12,9 @@ class Worker:
         future = self.pool.submit(self._hash, data, digest_size)
         return await asyncio.wrap_future(future)
 
-    async def gzip(self, data: bytes) -> bytes:
+    async def gzip(self, data: bytes | str) -> bytes:
+        if isinstance(data, str):
+            data = bytes(data, "utf-8")
         future = self.pool.submit(self._gzip, data)
         return await asyncio.wrap_future(future)
 

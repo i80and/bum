@@ -1,4 +1,5 @@
 import asyncio
+import pickle
 import struct
 from asyncio import Queue
 from io import BytesIO
@@ -26,27 +27,28 @@ class AsyncSocket(NamedTuple):
         return AsyncSocket(reader, writer)
 
 
-async def read_message(sock: AsyncSocket) -> Tuple[int, int, bytes]:
+async def read_message(sock: AsyncSocket) -> Tuple[int, int, object]:
     message_header = await sock.reader.readexactly(message_header_t.size)
     message_id, status, message_length = message_header_t.unpack(message_header)
     message_body = await sock.reader.readexactly(message_length)
 
-    return (message_id, status, message_body)
+    return (message_id, status, pickle.loads(message_body))
 
 
 async def send_message(
-    sock: AsyncSocket, message_id: int, method: int, message: bytes
+    sock: AsyncSocket, message_id: int, method: int, message: object
 ) -> None:
-    packed = message_header_t.pack(int(message_id), int(method), len(message))
+    pickled = pickle.dumps(message)
+    packed = message_header_t.pack(int(message_id), int(method), len(pickled))
     sock.writer.write(packed)
-    sock.writer.write(message)
+    sock.writer.write(pickled)
     await sock.writer.drain()
 
 
 class RPCClient:
     def __init__(self, sock: AsyncSocket) -> None:
         self.sock = sock
-        self.pending = {}  # type: Dict[int, Queue[Tuple[int, Optional[bytes]]]]
+        self.pending: dict[int, Queue[Tuple[int, object]]] = {}
         self.message_counter = 0
 
     def get_message_id(self) -> int:
@@ -55,10 +57,10 @@ class RPCClient:
         return message_id
 
     async def subscribe(
-        self, method: int, message: bytes, message_id: int
-    ) -> AsyncIterable[Tuple[int, Optional[bytes]]]:
+        self, method: int, message: object, message_id: int
+    ) -> AsyncIterable[Tuple[int, object]]:
         await send_message(self.sock, message_id, int(method), message)
-        queue = Queue()  # type: Queue[Tuple[int, Optional[bytes]]]
+        queue: Queue[Tuple[int, object]] = Queue()
         self.pending[message_id] = queue
 
         try:
@@ -78,8 +80,8 @@ class RPCClient:
             pass
 
     async def call(
-        self, method: int, message: bytes, message_id: int = None
-    ) -> Tuple[int, bytes]:
+        self, method: int, message: object, message_id: int = None
+    ) -> Tuple[int, object]:
         if message_id is None:
             message_id = self.get_message_id()
 
