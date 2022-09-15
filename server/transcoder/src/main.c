@@ -457,8 +457,42 @@ int get_covers(char* const* paths, int n_paths, bool thumbnail) {
         av_image_alloc(scaled_frame->data, scaled_frame->linesize, scaled_frame->width, scaled_frame->height, scaled_frame->format, 32);
         scaled_frame->linesize[0] = target_width * 3;
 
-        struct SwsContext* sws = sws_getContext(frame->width, frame->height, frame->format, scaled_frame->width, scaled_frame->height, scaled_frame->format, SWS_LANCZOS, NULL, NULL, 0);
+        // YUVJXXXP is deprecated and ffmpeg can't handle this.
+        // I don't know anything about ffmpeg, so this is pilfered from psalong on Stack Overflow:
+        // https://stackoverflow.com/a/47772987
+        bool changeColorspace = false;
+        enum AVPixelFormat pixFormat = frame->format;
+        switch (frame->format) {
+            case AV_PIX_FMT_YUVJ420P:
+                pixFormat = AV_PIX_FMT_YUV420P;
+                changeColorspace = true;
+                break;
+            case AV_PIX_FMT_YUVJ422P:
+                pixFormat = AV_PIX_FMT_YUV422P;
+                changeColorspace = true;
+                break;
+            case AV_PIX_FMT_YUVJ444P:
+                pixFormat = AV_PIX_FMT_YUV444P;
+                changeColorspace = true;
+                break;
+            case AV_PIX_FMT_YUVJ440P:
+                pixFormat = AV_PIX_FMT_YUV440P;
+                changeColorspace = true;
+                break;
+        }
+
+        struct SwsContext* sws = sws_getContext(frame->width, frame->height, pixFormat, scaled_frame->width, scaled_frame->height, scaled_frame->format, SWS_LANCZOS, NULL, NULL, 0);
         verify(sws != NULL);
+
+        if (changeColorspace) {
+            int dummy[4];
+            int srcRange, dstRange;
+            int brightness, contrast, saturation;
+            sws_getColorspaceDetails(sws, (int**)&dummy, &srcRange, (int**)&dummy, &dstRange, &brightness, &contrast, &saturation);
+            const int* coefs = sws_getCoefficients(SWS_CS_DEFAULT);
+            srcRange = 1;
+            sws_setColorspaceDetails(sws, coefs, srcRange, coefs, dstRange, brightness, contrast, saturation);
+        }
 
         sws_scale(sws, (const uint8_t * const*)frame->data, frame->linesize, 0, frame->height, scaled_frame->data, scaled_frame->linesize);
         uint8_t* scaled_buf = scaled_frame->data[0];
