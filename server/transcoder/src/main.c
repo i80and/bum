@@ -88,19 +88,18 @@ int decode(AVCodecContext* avctx, const AVPacket* pkt,
 
 int encode(AVCodecContext* avctx, const AVFrame* frame,
            encode_packet_cb cb, void* priv) {
-    AVPacket pkt;
-    pkt.data = NULL;
-    pkt.size = 0;
-    av_init_packet(&pkt);
+    AVPacket* pkt = av_packet_alloc();
+    pkt->data = NULL;
+    pkt->size = 0;
 
     verify_ffmpeg(avcodec_send_frame(avctx, frame));
 
     int ret = 0;
     do {
-        ret = avcodec_receive_packet(avctx, &pkt);
+        ret = avcodec_receive_packet(avctx, pkt);
         if (ret >= 0) {
-            cb(priv, &pkt);
-            av_packet_unref(&pkt);
+            cb(priv, pkt);
+            av_packet_unref(pkt);
         } else if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
             return ret;
         }
