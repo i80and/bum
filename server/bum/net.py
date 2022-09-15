@@ -3,8 +3,7 @@ import struct
 from asyncio import Queue
 from io import BytesIO
 from socket import socket
-from typing import (AsyncIterable, Dict, Iterable, NamedTuple, Optional, Tuple,
-                    TypeVar)
+from typing import AsyncIterable, Dict, Iterable, NamedTuple, Optional, Tuple, TypeVar
 
 message_header_t = struct.Struct("@III")
 net_u32_t = struct.Struct("!L")

@@ -8,8 +8,7 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import (AsyncIterable, Iterable, NamedTuple, Optional, Tuple,
-                    TypeVar)
+from typing import AsyncIterable, Iterable, NamedTuple, Optional, Tuple, TypeVar
 
 import pypledge
 import tornado.platform.asyncio
