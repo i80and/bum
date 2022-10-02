@@ -1,6 +1,5 @@
 import asyncio
 import concurrent
-import gzip
 import hashlib
 
 
@@ -10,12 +9,6 @@ class Worker:
 
     async def hash(self, data: bytes, digest_size: int = 16) -> str:
         future = self.pool.submit(self._hash, data, digest_size)
-        return await asyncio.wrap_future(future)
-
-    async def gzip(self, data: bytes | str) -> bytes:
-        if isinstance(data, str):
-            data = bytes(data, "utf-8")
-        future = self.pool.submit(self._gzip, data)
         return await asyncio.wrap_future(future)
 
     def close(self) -> None:
@@ -30,7 +23,3 @@ class Worker:
     @staticmethod
     def _hash(data: bytes, digest_size: int) -> str:
         return hashlib.blake2b(data, digest_size=digest_size).hexdigest()
-
-    @staticmethod
-    def _gzip(data: bytes) -> bytes:
-        return gzip.compress(data)

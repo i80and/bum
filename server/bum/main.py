@@ -26,13 +26,6 @@ CACHE_CONTROL_TRANSIENT = f"public, max-age={60 * 60}"
 T = TypeVar("T")
 
 
-def compressible(mime: str) -> bool:
-    return mime.startswith("text/") or mime in (
-        "application/javascript",
-        "image/svg+xml",
-    )
-
-
 class Image(NamedTuple):
     data: bytes
     etag: str
@@ -126,12 +119,6 @@ def start_web(port: int) -> socket.socket:
             if mimetype is None:
                 mimetype = "binary/octet-stream"
 
-            if compressible(mimetype) and "gzip" in self.request.headers.get(
-                "Accept-Encoding", ""
-            ):
-                self.set_header("Content-Encoding", "gzip")
-                result = await hashing_worker.gzip(result)
-
             self.set_header("Content-Type", mimetype)
             self.set_header("Vary", "Accept-Encoding")
             self.set_header("Cache-Control", CACHE_CONTROL_TRANSIENT)
@@ -144,10 +131,6 @@ def start_web(port: int) -> socket.socket:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
                 return
-
-            if "gzip" in self.request.headers.get("Accept-Encoding", ""):
-                self.set_header("Content-Encoding", "gzip")
-                result = await hashing_worker.gzip(result)
 
             self.set_header("Content-Type", "application/json")
             self.set_header("Vary", "Accept-Encoding")
@@ -206,10 +189,6 @@ def start_web(port: int) -> socket.socket:
                 self.finish()
                 return
 
-            if "gzip" in self.request.headers.get("Accept-Encoding", ""):
-                self.set_header("Content-Encoding", "gzip")
-                result = await hashing_worker.gzip(result)
-
             self.set_header("Content-Type", "application/json")
             self.set_header("Vary", "Accept-Encoding")
             self.set_header("Cache-Control", CACHE_CONTROL_TRANSIENT)
@@ -222,10 +201,6 @@ def start_web(port: int) -> socket.socket:
                 self.set_status(CoordinatorErrorCodes(code).to_http_code())
                 self.finish()
                 return
-
-            if "gzip" in self.request.headers.get("Accept-Encoding", ""):
-                self.set_header("Content-Encoding", "gzip")
-                result = await hashing_worker.gzip(result)
 
             self.set_header("Content-Type", "application/json")
             self.set_header("Vary", "Accept-Encoding")
