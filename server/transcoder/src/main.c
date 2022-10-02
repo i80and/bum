@@ -166,11 +166,14 @@ int initialize_audio_filter(const AVStream* inputStream, TranscodeContext* ctx) 
     const int64_t out_channel_layouts[] = {OUTPUT_CHANNEL_LAYOUT, -1};
     const int out_sample_rates[] = {OUTPUT_SAMPLE_RATE, -1};
 
-    snprintf(args, sizeof(args), "time_base=%d/%d:sample_rate=%d:sample_fmt=%s:channel_layout=0x%" PRIx64,
+    char channel_layout_str[128];
+    av_channel_layout_describe(&inputStream->codecpar->ch_layout, channel_layout_str, sizeof(channel_layout_str));
+
+    snprintf(args, sizeof(args), "time_base=%d/%d:sample_rate=%d:sample_fmt=%s:channel_layout=%s",
         inputStream->time_base.num, inputStream->time_base.den,
         inputStream->codecpar->sample_rate,
         av_get_sample_fmt_name(inputStream->codecpar->format),
-        inputStream->codecpar->channel_layout);
+        channel_layout_str);
     verify_ffmpeg(avfilter_graph_create_filter(&ctx->buffersrc_ctx, buffersrc, "in", args, NULL, ctx->filter_graph));
     verify_ffmpeg(avfilter_graph_create_filter(&ctx->buffersink_ctx, buffersink, "out", NULL, NULL, ctx->filter_graph));
     verify_ffmpeg(av_opt_set_int_list(ctx->buffersink_ctx, "sample_fmts", out_sample_fmts, -1, AV_OPT_SEARCH_CHILDREN));
@@ -194,7 +197,7 @@ int initialize_audio_filter(const AVStream* inputStream, TranscodeContext* ctx) 
     verify_ffmpeg(avfilter_graph_config(ctx->filter_graph, NULL));
 
     AVFilterLink* outlink = ctx->buffersink_ctx->inputs[0];
-    av_get_channel_layout_string(args, sizeof(args), -1, outlink->channel_layout);
+    av_channel_layout_describe(&outlink->ch_layout, args, sizeof(args));
 
     return 0;
 }
@@ -259,7 +262,7 @@ int transcode_audio(char* path) {
     encode_context->sample_fmt = OUTPUT_SAMPLE_FORMAT;
     encode_context->bit_rate = OUTPUT_BITRATE;
     encode_context->sample_rate = OUTPUT_SAMPLE_RATE;
-    encode_context->channel_layout = OUTPUT_CHANNEL_LAYOUT;
+    av_channel_layout_from_mask(&encode_context->ch_layout, OUTPUT_CHANNEL_LAYOUT);
 
     // Open codecs
     verify_ffmpeg(avcodec_open2(decode_context, decode_codec, NULL));
@@ -271,7 +274,7 @@ int transcode_audio(char* path) {
 
     // Setup our encoding frame
     ctx.resampled_frame = av_frame_alloc();
-    ctx.resampled_frame->channel_layout = encode_context->channel_layout;
+    ctx.resampled_frame->ch_layout = encode_context->ch_layout;
     ctx.resampled_frame->sample_rate = encode_context->sample_rate;
     ctx.resampled_frame->format = encode_context->sample_fmt;
     ctx.resampled_frame->nb_samples = encode_context->frame_size;
