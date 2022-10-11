@@ -3,7 +3,8 @@ import hashlib
 import logging
 import os
 from pathlib import Path
-from typing import AsyncIterable, Optional, Sequence, Tuple
+import mimetypes
+from typing import AsyncIterable, Optional, Sequence, Tuple, AsyncIterator, Final
 
 import mutagen
 
@@ -19,18 +20,106 @@ class TranscodeError(Exception):
     pass
 
 
+def get_cover_from_mutagen(mutagen_file: mutagen.FileType) -> Optional[bytes]:
+    if isinstance(mutagen_file, mutagen.mp3.MP3):
+        pics = mutagen_file.tags.getall("APIC") + mutagen_file.tags.getall("PIC")
+        for p in pics:
+            if p.type == mutagen.id3.PictureType.COVER_FRONT:
+                return p.data
+    elif isinstance(mutagen_file, mutagen.flac.FLAC):
+        for p in mutagen_file.pictures:
+            if p.type == mutagen.id3.PictureType.COVER_FRONT:
+                return p.data
+    return None
+
+
 class BumTranscode:
     def __init__(self) -> None:
-        self.path = Path("./transcoder/build/bum-transcode")
+        self.path = Path("./transcoder2/target/release/transcoder2")
         self.transcoders: dict[int, Optional[asyncio.subprocess.Process]] = {}
 
-    async def get_cover_stream(self, paths: Sequence[Path], thumbnail: bool) -> bytes:
+    async def get_cover_stream(
+        self, paths: Sequence[Path], thumbnail: bool
+    ) -> AsyncIterator[Tuple[Path, Optional[bytes]]]:
         method = "get-thumbnails" if thumbnail else "get-cover"
-        child = await self.spawn(method, paths)
-        assert child.stdout is not None
-        output = await child.stdout.read()
+        child = await self.spawn(method, [])
 
-        return output
+        assert child.stdout is not None
+        assert child.stdin is not None
+
+        stdout: Final[asyncio.StreamReader] = child.stdout
+        stdin: Final[asyncio.StreamWriter] = child.stdin
+
+        results_queue: asyncio.queues.Queue[
+            Optional[Tuple[Path, Optional[bytes]]]
+        ] = asyncio.queues.Queue()
+
+        async def feeder_thread_function() -> None:
+            def feed(path: Path, data: Optional[bytes]) -> None:
+                path_string = bytes(str(path), "utf-8")
+                stdin.write(net.net_u32_t.pack(len(path_string)))
+                stdin.write(net.net_u32_t.pack(len(data) if data is not None else 0))
+                stdin.write(path_string)
+                if data is not None:
+                    stdin.write(data)
+
+            i = 0
+            for path in paths:
+                i += 1
+                image_type, encoding = mimetypes.guess_type(path)
+                if image_type is None:
+                    logger.error("Cannot determine file type of %s", path)
+                    await results_queue.put((path, None))
+                    continue
+
+                if image_type.startswith("image"):
+                    feed(path, None)
+                else:
+                    try:
+                        parsed_file = mutagen.File(path)
+                    except mutagen.MutagenError as err:
+                        logger.error('Error loading %s: "%s"', path, err)
+                        await results_queue.put((path, None))
+                        continue
+
+                    image = get_cover_from_mutagen(parsed_file)
+                    feed(path, image)
+            stdin.close()
+
+        async def reader_thread_function() -> None:
+            try:
+                while True:
+                    try:
+                        path_len_raw = await stdout.readexactly(4)
+                        data_len_raw = await stdout.readexactly(4)
+
+                        path_len = net.net_u32_t.unpack(path_len_raw)[0]
+                        data_len = net.net_u32_t.unpack(data_len_raw)[0]
+
+                        path_bytes = await stdout.readexactly(path_len)
+                        data_bytes = await stdout.readexactly(data_len)
+
+                        await results_queue.put(
+                            (
+                                Path(str(path_bytes, "utf-8")),
+                                data_bytes if data_bytes else None,
+                            )
+                        )
+                    except asyncio.exceptions.IncompleteReadError as err:
+                        if err.partial:
+                            logger.error("Suspicious partial read")
+                        return
+            finally:
+                await results_queue.put(None)
+
+        asyncio.create_task(feeder_thread_function())
+        asyncio.create_task(reader_thread_function())
+
+        while True:
+            result = await results_queue.get()
+            if result is None:
+                return
+            yield result
 
     async def transcode(self, handle: int, path: Path) -> AsyncIterable[bytes]:
         self.transcoders[handle] = None
@@ -208,29 +297,21 @@ class MediaDatabase:
             ctx.album.tracks.sort(key=lambda track: self.songs[track].trackno)
 
     async def get_covers(self, paths: Sequence[Path], thumbnail: bool) -> bytes:
-        missing: dict[int, Path] = {}
-        images: list[bytes | None] = []
-        for i, path in enumerate(paths):
-            result = self.image_cache.get((thumbnail, path))
-            if result is not None:
-                images.append(result)
-            else:
-                images.append(b"")
-                missing[i] = path
+        missing: list[Path] = []
+        for path in paths:
+            if (thumbnail, path) not in self.image_cache:
+                missing.append(path)
 
-        stream = await self.bum_transcode.get_cover_stream(
-            list(missing.values()), thumbnail
-        )
-        new_images = list(net.unpack_sequence(stream))
+        new_images: dict[Path, Optional[bytes]] = {}
+        async for path, data in self.bum_transcode.get_cover_stream(missing, thumbnail):
+            new_images[path] = data
 
-        for path, image in zip(paths, new_images):
-            self.image_cache[(thumbnail, path)] = image
+        for path, image in new_images.items():
+            if image:
+                self.image_cache[(thumbnail, path)] = image
 
-        for index, image in zip(missing.keys(), new_images):
-            images[index] = image
-
-        packed = net.pack_sequence(images)
-
+        result = [self.image_cache.get((thumbnail, path), b"") for path in paths]
+        packed = net.pack_sequence(result)
         return packed
 
     def close(self) -> None:

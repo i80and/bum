@@ -1,0 +1,19 @@
+[package]
+name = "transcoder2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+byteorder = "1.4"
+crossbeam-queue = "0.3.6"
+glib = "0.15.12"
+gstreamer = "0.18.8"
+image = "0.24.4"
+mozjpeg = "0.9.4"
+num_cpus = "1.13.1"
+scoped_threadpool = "0.1.9"
+
+[profile.release]
+lto = "fat"
